@@ -5,6 +5,14 @@ from ._utils import gcd
 
 
 class EnzymeReaction:
+    """An enzyme-catalyzed reaction.
+
+    Contains the micro-reactions and computes the rate expression of the
+    net reaction under the steady state assumption of the enzyme complexes.
+
+    See https://doi.org/10.1021/ja01104a045 for more details.
+    """
+
     def __init__(self, rxn_str: str):
         self.reactions = self._parse_reaction(rxn_str)
         self.enzyme_states = []
@@ -30,6 +38,7 @@ class EnzymeReaction:
 
     @staticmethod
     def _parse_reaction(rxn_str: str) -> list[Rxn]:
+        """Parse the micro-reaction string."""
         res = []
         for line in rxn_str.split("\n"):
             if not line.strip():
@@ -38,6 +47,7 @@ class EnzymeReaction:
         return res
 
     def _set_net_reaction(self):
+        """Determine the net reaction of the micro-reactions."""
         net_reaction = sp.Add(
             *chain.from_iterable(rxn.products for rxn in self.reactions)
         ) - sp.Add(*chain.from_iterable(rxn.substrates for rxn in self.reactions))
@@ -53,6 +63,10 @@ class EnzymeReaction:
                 raise ValueError(f"Cannot determine if {sym} is a substrate or product")
 
     def _create_stoichiometric_matrix(self) -> sp.Matrix:
+        """Create the stoichiometric matrix of the net reaction.
+
+        Includes only the enzyme states as rows.
+        """
         s = sp.zeros(
             len(self.enzyme_states), sum(len(rxn.rates) for rxn in self.reactions)
         )
@@ -74,13 +88,19 @@ class EnzymeReaction:
         return s
 
     def _get_micro_fluxes(self) -> sp.Matrix:
+        """Get the fluxes of the micro-reactions."""
         rates = sp.Matrix([rate for rxn in self.reactions for rate in rxn.rates])
         return rates
 
     def _xdot(self) -> sp.Matrix:
+        """Compute the time derivative of the enzyme states."""
         return self.stoichiometric_matrix * self.micro_fluxes
 
     def _compute_steadystate_concentrations(self) -> dict[sp.Symbol, sp.Expr]:
+        """Compute the steady state concentrations of the enzyme complexes.
+
+        See also https://doi.org/10.1021/ja01104a045.
+        """
         xdot = self._xdot()
         # Add the conservation of enzyme amounts
         xdot = xdot.row_insert(
@@ -92,7 +112,7 @@ class EnzymeReaction:
         # ... this is slow
         # ... there is probably a smarter way to do that?!
         d = gcd(*res.values())
-        return {k: (v * d).simplify() for k, v in res.items()}
+        return {k: (v / d).simplify() for k, v in res.items()}
 
     def _compute_flux(self) -> sp.Expr:
         """Compute the net flux of the reaction."""
@@ -121,6 +141,12 @@ class EnzymeReaction:
         return ret.simplify()
 
     def get_vmax(self) -> tuple[sp.Expr, sp.Expr]:
+        """Get the maximum reaction rates.
+
+        I.e., the limit of the net flux of the forward (backward) reaction
+        for infinite substrate (product) and zero product (substrate)
+        concentrations.
+        """
         net_flux = self.net_flux
 
         # set products to 0, replace substrates by a single substrate,
@@ -139,7 +165,14 @@ class EnzymeReaction:
         return v_max_f.simplify(), v_max_r.simplify()
 
     def get_kinetic_parameters(self):
-        flux = self._compute_flux()
+        """Get the kinetic parameters of the reaction.
+
+        Get the maximum reaction rates and the half-saturation (K_m) constants.
+
+        Half-saturation constants are the substrate (product) concentration at
+        which the reaction rate is half of the maximum forward (backward) rate.
+        """
+        flux = self.net_flux
         v_max_f, v_max_r = self.get_vmax()
 
         pars = {}
