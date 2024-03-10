@@ -1,5 +1,6 @@
 from rxnrater.enzyme_rxn import EnzymeReaction
 from rxnrater._utils import sympify
+import sympy as sp
 
 
 def test_WuYan2007_fumarase():
@@ -16,6 +17,7 @@ def test_WuYan2007_fumarase():
     )
     assert res["Km_FUM"] == sympify("(k1r + k2f) / k1f")
     assert res["Km_MAL"] == sympify("(k1r + k2f) / k2r")
+    assert res["keq_micro"] == sympify("k1f*k2f/(k1r*k2r)")
 
 
 def test_WuYan2007_mdh():
@@ -33,6 +35,7 @@ def test_WuYan2007_mdh():
     assert res["Km_MAL"] == sympify("k4f*(k2r + k3f)/(k2f*(k3f + k4f))")
     assert res["Km_OAA"] == sympify("k1r*(k2r + k3f)/(k3r*(k1r + k2r))")
     assert res["Km_NADH"] == sympify("k1r*k2r/(k4r*(k1r + k2r))")
+    assert res["keq_micro"] == sympify("k1f*k2f*k3f*k4f/(k1r*k2r*k3r*k4r)")
 
 
 def test_WuYan2007_citrate_synthase():
@@ -48,6 +51,7 @@ def test_WuYan2007_citrate_synthase():
     assert res["V_mr"] == 0
     assert res["Km_OAA"] == sympify("k3*k4/(k1f*(k3 + k4))")
     assert res["Km_ACCOA"] == sympify("k4*(k2r + k3)/(k2f*(k3 + k4))")
+    assert res["keq_micro"] == sp.oo
 
 
 def test_WuYan2007_pdh():
@@ -66,3 +70,4 @@ def test_WuYan2007_pdh():
     assert res["Km_PYR"] == sympify("k4*k6*(k1r + k2)/(k1f*(k2*k4 + k2*k6 + k4*k6))")
     assert res["Km_COASH"] == sympify("k2*k6*(k3r + k4)/(k3f*(k2*k4 + k2*k6 + k4*k6))")
     assert res["Km_NAD"] == sympify("k2*k4*(k5r + k6)/(k5f*(k2*k4 + k2*k6 + k4*k6))")
+    assert res["keq_micro"] == sp.oo

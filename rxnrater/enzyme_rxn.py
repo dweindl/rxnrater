@@ -179,6 +179,7 @@ class EnzymeReaction:
         pars["V_mf"] = v_max_f
         pars["V_mr"] = v_max_r
         pars["flux"] = flux
+        pars["keq_micro"] = sp.oo
 
         for s in self.substrates:
             flux2 = flux.subs({p: 0 for p in self.products})
@@ -211,4 +212,18 @@ class EnzymeReaction:
                 )
                 tmp = sp.limit(tmp, other_products[0], sp.oo)
             pars[f"Km_{p}"] = tmp.simplify()
+
+        # equilibrium constant of net reaction in terms of microscopic rate
+        # constants
+        # keq = \prod products_ss / \prod substrates_ss
+        # solve flux = 0 for first product, then multiply by all others,
+        # divide by all substrates
+        # exclude E0 = 0 solution
+        flux_tmp = flux.subs(sp.Symbol("E0"), sp.Symbol("E0", positive=True))
+        ss_prod_0 = sp.solve(flux_tmp, self.products[0])
+        assert len(ss_prod_0) == 1
+        ss_prod_0 = ss_prod_0[0]
+        keq = ss_prod_0 * sp.Mul(*self.products[1:]) / sp.Mul(*self.substrates)
+        pars["keq_micro"] = keq
+
         return pars
