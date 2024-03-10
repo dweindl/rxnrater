@@ -15,6 +15,8 @@ class EnzymeReaction:
 
     def __init__(self, rxn_str: str):
         self.reactions = self._parse_reaction(rxn_str)
+        # symbol for the total enzyme concentration
+        self.e0 = sp.Symbol("E0")
         self.enzyme_states = []
 
         for rxn in self.reactions:
@@ -138,7 +140,7 @@ class EnzymeReaction:
         ss_conc = self.steadystate_concentrations
         flux = flux.subs(ss_conc)
         # divide by total enzyme concentration
-        ret = sp.Symbol("E0") * flux / sp.Add(*ss_conc.values())
+        ret = self.e0 * flux / sp.Add(*ss_conc.values())
         return ret.simplify()
 
     def _compute_vmax(self) -> tuple[sp.Expr, sp.Expr]:
@@ -220,7 +222,7 @@ class EnzymeReaction:
         pars["flux"] = flux
         pars["keq_micro"] = sp.oo
 
-        if self.vmax_r.is_zero:
+        if not self.reversible:
             return pars
 
         # equilibrium constant of net reaction in terms of microscopic rate
@@ -229,7 +231,7 @@ class EnzymeReaction:
         # solve flux = 0 for first product, then multiply by all others,
         # divide by all substrates
         # exclude E0 = 0 solution
-        flux_tmp = flux.subs(sp.Symbol("E0"), sp.Symbol("E0", positive=True))
+        flux_tmp = flux.subs(self.e0, sp.Symbol(self.e0.name, positive=True))
         ss_prod_0 = sp.solve(flux_tmp, self.products[0])
         assert len(ss_prod_0) == 1
         ss_prod_0 = ss_prod_0[0]
@@ -237,3 +239,7 @@ class EnzymeReaction:
         pars["keq_micro"] = keq
 
         return pars
+
+    @property
+    def reversible(self):
+        return not self.vmax_r.is_zero
