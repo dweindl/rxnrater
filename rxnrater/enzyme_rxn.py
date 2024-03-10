@@ -30,6 +30,7 @@ class EnzymeReaction:
             sp.Symbol, sp.Expr
         ] = self._compute_steadystate_concentrations()
         self.net_flux = self._compute_flux()
+        self.vmax_f, self.vmax_r = self._compute_vmax()
 
     def __repr__(self):
         substrates = " + ".join(str(s) for s in self.substrates)
@@ -140,7 +141,7 @@ class EnzymeReaction:
         ret = sp.Symbol("E0") * flux / sp.Add(*ss_conc.values())
         return ret.simplify()
 
-    def get_vmax(self) -> tuple[sp.Expr, sp.Expr]:
+    def _compute_vmax(self) -> tuple[sp.Expr, sp.Expr]:
         """Get the maximum reaction rates.
 
         I.e., the limit of the net flux of the forward (backward) reaction
@@ -164,26 +165,13 @@ class EnzymeReaction:
         v_max_r = sp.limit(flux_tmp, self.products[0], sp.oo)
         return v_max_f.simplify(), v_max_r.simplify()
 
-    def get_kinetic_parameters(self):
-        """Get the kinetic parameters of the reaction.
-
-        Get the maximum reaction rates and the half-saturation (K_m) constants.
-
-        Half-saturation constants are the substrate (product) concentration at
-        which the reaction rate is half of the maximum forward (backward) rate.
-        """
-        flux = self.net_flux
-        v_max_f, v_max_r = self.get_vmax()
-
-        pars = {}
-        pars["V_mf"] = v_max_f
-        pars["V_mr"] = v_max_r
-        pars["flux"] = flux
-        pars["keq_micro"] = sp.oo
+    def _compute_kms(self) -> dict[str, sp.Expr]:
+        """Compute the half-saturation constants of the reaction."""
+        kms = {}
 
         for s in self.substrates:
-            flux2 = flux.subs({p: 0 for p in self.products})
-            tmp = sp.solve(sp.Eq(flux2, 1 / 2 * v_max_f), s)
+            flux2 = self.net_flux.subs({p: 0 for p in self.products})
+            tmp = sp.solve(sp.Eq(flux2, 1 / 2 * self.vmax_f), s)
             assert len(tmp) == 1, (tmp, flux2)
             tmp = tmp[0]
             if len(self.substrates) > 1:
@@ -194,13 +182,13 @@ class EnzymeReaction:
                     {_s: other_substrates[0] for _s in self.substrates if _s != s}
                 )
                 tmp = sp.limit(tmp, other_substrates[0], sp.oo)
-            pars[f"Km_{s}"] = tmp.simplify()
-        if v_max_r.is_zero:
-            return pars
+            kms[f"Km_{s}"] = tmp.simplify()
+        if self.vmax_r.is_zero:
+            return kms
 
         for p in self.products:
-            flux2 = flux.subs({s: 0 for s in self.substrates})
-            tmp = sp.solve(sp.Eq(-flux2, 1 / 2 * v_max_r), p)
+            flux2 = self.net_flux.subs({s: 0 for s in self.substrates})
+            tmp = sp.solve(sp.Eq(-flux2, 1 / 2 * self.vmax_r), p)
             assert len(tmp) == 1, (tmp, flux2)
             tmp = tmp[0]
             if len(self.products) > 1:
@@ -211,7 +199,29 @@ class EnzymeReaction:
                     {_s: other_products[0] for _s in self.products if _s != p}
                 )
                 tmp = sp.limit(tmp, other_products[0], sp.oo)
-            pars[f"Km_{p}"] = tmp.simplify()
+            kms[f"Km_{p}"] = tmp.simplify()
+
+        return kms
+
+    def get_kinetic_parameters(self):
+        """Get the kinetic parameters of the reaction.
+
+        Get the maximum reaction rates and the half-saturation (K_m) constants.
+
+        Half-saturation constants are the substrate (product) concentration at
+        which the reaction rate is half of the maximum forward (backward) rate.
+        """
+        flux = self.net_flux
+        v_max_f, v_max_r = self._compute_vmax()
+
+        pars = self._compute_kms()
+        pars["V_mf"] = v_max_f
+        pars["V_mr"] = v_max_r
+        pars["flux"] = flux
+        pars["keq_micro"] = sp.oo
+
+        if self.vmax_r.is_zero:
+            return pars
 
         # equilibrium constant of net reaction in terms of microscopic rate
         # constants
