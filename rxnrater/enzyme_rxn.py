@@ -34,7 +34,7 @@ class EnzymeReaction:
     def __repr__(self):
         substrates = " + ".join(str(s) for s in self.substrates)
         products = " + ".join(str(p) for p in self.products)
-        return f"<EnzymeReaction{substrates} -- {products})>"
+        return f"<EnzymeReaction({substrates} -- {products})>"
 
     @staticmethod
     def _parse_reaction(rxn_str: str) -> list[Rxn]:
