@@ -20,6 +20,37 @@ def test_WuYan2007_fumarase():
     assert res["keq_micro"] == sympify("k1f*k2f/(k1r*k2r)")
 
 
+def test_WuYan2007_succinyl_coa_synthetase():
+    # NOTE: slow
+    rxn_str = """
+    E + MgGDP -- E:MgGDP , k1f , k1r
+    E:MgGDP + SCOA -- E:MgGDP:SCOA , k2f , k2r
+    E:MgGDP:SCOA + PI -- E:MgGDP:SCOA:PI , k3f , k3r
+    E:MgGDP:SCOA:PI -- E:MgGTP:SUC + COASH , k4f , k4r
+    E:MgGTP:SUC -- E:MgGTP + SUC , k5f , k5r
+    E:MgGTP -- E + MgGTP , k6f , k6r
+    """
+    er = EnzymeReaction(rxn_str)
+    assert repr(er) == "<EnzymeReaction(MgGDP + PI + SCOA -- COASH + MgGTP + SUC)>"
+
+    res = er.get_kinetic_parameters()
+    assert res["V_mf"] == sympify("E0*k4f*k5f*k6f/(k4f*k5f + k4f*k6f + k5f*k6f)")
+    assert res["V_mr"] == sympify("E0*k1r*k2r*k3r/(k1r*k2r + k1r*k3r + k2r*k3r)")
+    assert res["Km_MgGDP"] == sympify("k4f*k5f*k6f/(k1f*(k4f*k5f + k4f*k6f + k5f*k6f))")
+    assert res["Km_SCOA"] == sympify("k4f*k5f*k6f/(k2f*(k4f*k5f + k4f*k6f + k5f*k6f))")
+    assert res["Km_PI"] == sympify(
+        "k5f*k6f*(k3r + k4f)/(k3f*(k4f*k5f + k4f*k6f + k5f*k6f))"
+    )
+    assert res["Km_COASH"] == sympify(
+        "k1r*k2r*(k3r + k4f)/(k4r*(k1r*k2r + k1r*k3r + k2r*k3r))"
+    )
+    assert res["Km_SUC"] == sympify("k1r*k2r*k3r/(k5r*(k1r*k2r + k1r*k3r + k2r*k3r))")
+    assert res["Km_MgGTP"] == sympify("k1r*k2r*k3r/(k6r*(k1r*k2r + k1r*k3r + k2r*k3r))")
+    assert res["keq_micro"] == sympify(
+        "k1f*k2f*k3f*k4f*k5f*k6f/(k1r*k2r*k3r*k4r*k5r*k6r)"
+    )
+
+
 def test_WuYan2007_mdh():
     rxn_str = """
     E + NAD -- E:NAD , k1f , k1r
