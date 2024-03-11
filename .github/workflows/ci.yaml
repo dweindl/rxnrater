@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron:  '48 4 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v3
+
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install local packages
+      run: |
+        pip install --upgrade pip setuptools && pip install .[dev]
+
+    - name: Unit tests
+      run: pytest
