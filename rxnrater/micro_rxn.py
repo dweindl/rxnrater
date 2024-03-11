@@ -9,7 +9,16 @@ from ._utils import sympify
 class Rxn:
     substrates: list[sp.Symbol]
     products: list[sp.Symbol]
-    rates: list[sp.Symbol | sp.Expr]
+    rate_constants: list[sp.Symbol]
+
+    @property
+    def rates(self) -> list[sp.Symbol | sp.Expr]:
+        return [
+            rate_constant * sp.Mul(*reactants)
+            for rate_constant, reactants in zip(
+                self.rate_constants, [self.substrates, self.products]
+            )
+        ]
 
     @staticmethod
     def from_string(rxn_str: str) -> Rxn:
@@ -17,7 +26,7 @@ class Rxn:
         tokens = rxn_str.split(" ")
         substrates = []
         products = []
-        rates = []
+        rate_constants = []
         reversible = True
         cur_list = substrates
         for token in tokens:
@@ -35,27 +44,25 @@ class Rxn:
 
             # TODO currently requires space-separated commas
             if token == ",":
-                cur_list = rates
+                cur_list = rate_constants
                 continue
 
             # ":" not supported by sympify
             expr = token.replace(":", "_")
             sym = sympify(expr)
-            if cur_list is rates:
-                sym *= sp.Mul(*(substrates if len(rates) == 0 else products))
-
             cur_list.append(sym)
 
-        if reversible and len(rates) != 2:
+        # TODO warn if rate constants are reused
+        if reversible and len(rate_constants) != 2:
             raise ValueError(
-                f"A reversible reaction requires exactly two rate constants, got {rates}"
+                f"A reversible reaction requires exactly two rate constants, got {rate_constants}"
             )
-        if not reversible and len(rates) != 1:
+        if not reversible and len(rate_constants) != 1:
             raise ValueError(
-                f"An irreversible reaction requires exactly one rate constant, got {rates}"
+                f"An irreversible reaction requires exactly one rate constant, got {rate_constants}"
             )
 
-        return Rxn(substrates, products, rates)
+        return Rxn(substrates, products, rate_constants)
 
     @property
     def enzyme_states(self):
