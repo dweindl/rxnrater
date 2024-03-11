@@ -56,7 +56,7 @@ class EnzymeReaction:
         ) - sp.Add(*chain.from_iterable(rxn.substrates for rxn in self.reactions))
         self.substrates = []
         self.products = []
-        for sym in net_reaction.free_symbols:
+        for sym in sorted(net_reaction.free_symbols, key=str):
             deriv = sp.diff(net_reaction, sym)
             if deriv > 0:
                 self.products.append(sym)
