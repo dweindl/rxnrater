@@ -46,9 +46,15 @@ class Rxn:
 
             cur_list.append(sym)
 
-        assert (reversible and len(rates) == 2) or (
-            not reversible and len(rates) == 1
-        ), (reversible, rates)
+        if reversible and len(rates) != 2:
+            raise ValueError(
+                f"A reversible reaction requires exactly two rate constants, got {rates}"
+            )
+        if not reversible and len(rates) != 1:
+            raise ValueError(
+                f"An irreversible reaction requires exactly one rate constant, got {rates}"
+            )
+
         return Rxn(substrates, products, rates)
 
     @property

@@ -65,6 +65,14 @@ class EnzymeReaction:
             else:
                 raise ValueError(f"Cannot determine if {sym} is a substrate or product")
 
+        net_reaction_enzyme_states = (set(self.products) | set(self.substrates)) & set(
+            self.enzyme_states
+        )
+        if net_reaction_enzyme_states:
+            raise ValueError(
+                f"Enzyme states must not be substrates or products of the net reaction: {net_reaction_enzyme_states}"
+            )
+
     def _create_stoichiometric_matrix(self) -> sp.Matrix:
         """Create the stoichiometric matrix of the net reaction.
 
