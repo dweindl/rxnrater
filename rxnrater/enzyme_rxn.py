@@ -2,7 +2,6 @@ from .micro_rxn import Rxn
 from itertools import chain
 import sympy as sp
 from ._utils import gcd
-from warnings import warn
 
 
 class EnzymeReaction:
@@ -258,13 +257,15 @@ class EnzymeReaction:
                 # find micro-reaction S + E -> E_S
                 num = denom = None
                 # enzyme-substrate complex
-                # es_sym = None
                 for reaction in self.reactions:
                     if set(reaction.substrates) == {self.e_free, s}:
+                        # S + E -> E_S
+                        assert (
+                            denom is None
+                        ), "Found multiple S + E -- E_S micro-reactions"
                         denom = reaction.rate_constants[0]
                         assert len(reaction.products) == 1
                         assert reaction.products[0] in self.enzyme_states
-                        # es_sym = reaction.products[0]
                         if reaction.reversible:
                             num = reaction.rate_constants[1]
                         break
@@ -272,28 +273,22 @@ class EnzymeReaction:
                         set(reaction.products) == {self.e_free, s}
                         and reaction.reversible
                     ):
+                        # E_S -- S + E
+                        assert (
+                            denom is None
+                        ), "Found multiple E_S -- S + E micro-reactions"
                         denom = reaction.rate_constants[1]
                         assert len(reaction.substrates) == 1
                         assert reaction.substrates[0] in self.enzyme_states
-                        # es_sym = reaction.substrates[0]
                         num = reaction.rate_constants[0]
-                        break
-                else:
+
+                if num is None or denom is None:
                     if self.reversible:
                         raise ValueError(
                             f"Cannot find micro-reaction for E+{s} -> E:{s}"
                         )
-
-                # if E+S -> E_S and E_S -> E+S are in separate reactions we
-                # need to find the dissociation reaction of `es_sym`
-                if num is None or denom is None:
-                    warn(
-                        f"Cannot find dissociation reaction for E:{s} -> E+{s}. "
-                        "Either because the reaction is irreversible (no problem) or because "
-                        "the reverse reaction is in a separate micro reaction "
-                        "(currently not supported)."
-                    )
                     continue
+
                 kis[f"Ki_{s}"] = num / denom
 
         return kis
