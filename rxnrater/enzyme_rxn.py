@@ -298,34 +298,33 @@ class EnzymeReaction:
         if self.kinetic_parameters is not None:
             return self.kinetic_parameters
 
-        flux = self.net_flux
-        v_max_f, v_max_r = self._compute_vmax()
-
         pars = self._compute_kms()
-        pars["V_mf"] = v_max_f
-        pars["V_mr"] = v_max_r
-        pars["flux"] = flux
-        pars["keq_micro"] = sp.oo
+        pars["V_mf"] = self.vmax_f
+        pars["V_mr"] = self.vmax_r
+        pars["flux"] = self.net_flux
+        pars["keq_micro"] = self._compute_keq()
         pars |= self._compute_kis()
+        return pars
 
+    def _compute_keq(self) -> sp.Expr:
+        """Compute the equilibrium constant of the reaction.
+
+        Compute the equilibrium constant of net reaction in terms of
+        microscopic rate constants.
+        """
         if not self.reversible:
-            return pars
+            return sp.oo
 
-        # equilibrium constant of net reaction in terms of microscopic rate
-        # constants
         # keq = \prod products_ss / \prod substrates_ss
-        # solve flux = 0 for first product, then multiply by all others,
-        # divide by all substrates
+        # solve flux = 0 for first product, then multiply by all reactants,
         # exclude E0 = 0 solution
-        flux_tmp = flux.subs(self.e0, sp.Symbol(self.e0.name, positive=True))
+        flux_tmp = self.net_flux.subs(self.e0, sp.Symbol(self.e0.name, positive=True))
         ss_prod_0 = sp.solve(flux_tmp, self.products[0])
         assert len(ss_prod_0) == 1
         ss_prod_0 = ss_prod_0[0]
+        # cancel out remaining reactants
         keq = ss_prod_0 * sp.Mul(*self.products[1:]) / sp.Mul(*self.substrates)
-        pars["keq_micro"] = keq
-
-        self.kinetic_parameters = pars
-        return pars
+        return keq.simplify()
 
     @property
     def reversible(self):
