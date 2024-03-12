@@ -187,37 +187,31 @@ class EnzymeReaction:
         """Compute the half-saturation constants of the reaction."""
         kms = {}
 
-        for s in self.substrates:
-            flux2 = self.net_flux.subs({p: 0 for p in self.products})
-            tmp = sp.solve(sp.Eq(flux2, 1 / 2 * self.vmax_f), s)
-            assert len(tmp) == 1, (tmp, flux2)
-            tmp = tmp[0]
-            if len(self.substrates) > 1:
-                # let other substrates approach inf
-                other_substrates = self.substrates.copy()
-                other_substrates.remove(s)
-                tmp = tmp.subs(
-                    {_s: other_substrates[0] for _s in self.substrates if _s != s}
-                )
-                tmp = sp.limit(tmp, other_substrates[0], sp.oo)
-            kms[f"Km_{s}"] = tmp.simplify()
-        if self.vmax_r.is_zero:
-            return kms
+        for substrates, products, net_flux, vmax_f in zip(
+            [self.substrates, self.products],
+            [self.products, self.substrates],
+            [self.net_flux, -self.net_flux],
+            [self.vmax_f, self.vmax_r],
+        ):
+            for s in substrates:
+                # set other substrates to 0
+                flux2 = net_flux.subs({p: 0 for p in products})
+                # compute concentration of `s` for half-maximum rate
+                tmp = sp.solve(sp.Eq(flux2, 1 / 2 * vmax_f), s)
+                assert len(tmp) == 1, (tmp, flux2)
+                tmp = tmp[0]
+                if len(substrates) > 1:
+                    # let other substrates approach inf
+                    other_substrates = substrates.copy()
+                    other_substrates.remove(s)
+                    tmp = tmp.subs(
+                        {_s: other_substrates[0] for _s in substrates if _s != s}
+                    )
+                    tmp = sp.limit(tmp, other_substrates[0], sp.oo)
+                kms[f"Km_{s}"] = tmp.simplify()
 
-        for p in self.products:
-            flux2 = self.net_flux.subs({s: 0 for s in self.substrates})
-            tmp = sp.solve(sp.Eq(-flux2, 1 / 2 * self.vmax_r), p)
-            assert len(tmp) == 1, (tmp, flux2)
-            tmp = tmp[0]
-            if len(self.products) > 1:
-                # let other substrates approach inf
-                other_products = self.products.copy()
-                other_products.remove(p)
-                tmp = tmp.subs(
-                    {_s: other_products[0] for _s in self.products if _s != p}
-                )
-                tmp = sp.limit(tmp, other_products[0], sp.oo)
-            kms[f"Km_{p}"] = tmp.simplify()
+            if not self.reversible:
+                break
 
         return kms
 
