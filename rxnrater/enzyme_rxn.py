@@ -230,23 +230,28 @@ class EnzymeReaction:
         # see https://doi.org/10.4324/9780203833575 p41ff
         kis: dict[str, sp.Expr] = {}
 
-        for s in self.substrates:
-            # set other substrates to 0
-            limit_flux = -self.net_flux.subs(
-                {s_: 0 for s_ in self.substrates if s_ != s}
-            )
-            # let products approach inf
-            for p in self.products:
-                limit_flux = sp.limit(limit_flux, p, sp.oo).cancel()
+        for substrates, products, net_flux, vmax in zip(
+            [self.substrates, self.products],
+            [self.products, self.substrates],
+            [-self.net_flux, self.net_flux],
+            [self.vmax_r, self.vmax_f],
+        ):
+            for s in substrates:
+                # set other substrates to 0
+                limit_flux = net_flux.subs({s_: 0 for s_ in substrates if s_ != s})
+                # let products approach inf
+                for p in products:
+                    limit_flux = sp.limit(limit_flux, p, sp.oo).cancel()
 
-            # not completely sure this is generally valid
-            if limit_flux.has(s):
-                # uncompetitive product inhibition
-                # compute substrate concentration for half-maximum backward rate
-                tmp = sp.solve(sp.Eq(limit_flux, 1 / 2 * self.vmax_r), s)
-                assert len(tmp) == 1, (tmp, limit_flux)
-                kis[f"Ki_{s}"] = tmp[0]
-            else:
+                # not completely sure this is generally valid
+                if limit_flux.has(s):
+                    # uncompetitive product inhibition
+                    # compute substrate concentration for half-maximum backward rate
+                    tmp = sp.solve(sp.Eq(limit_flux, 1 / 2 * vmax), s)
+                    assert len(tmp) == 1, (tmp, limit_flux)
+                    kis[f"Ki_{s}"] = tmp[0]
+                    continue
+
                 # competitive product inhibition
                 # Ki is just the dissociation constant of the enzyme-substrate
                 # complex
@@ -291,66 +296,6 @@ class EnzymeReaction:
                     continue
                 kis[f"Ki_{s}"] = num / denom
 
-        # TODO refactor out common code
-        for p in self.products:
-            # set other products to 0
-            limit_flux = self.net_flux.subs({p_: 0 for p_ in self.products if p_ != p})
-            # let substrates approach inf
-            for s in self.substrates:
-                limit_flux = sp.limit(limit_flux, s, sp.oo).cancel()
-
-            # not completely sure this is generally valid
-            if limit_flux.has(p):
-                # uncompetitive product inhibition
-                # compute product concentration for half-maximum forward rate
-                tmp = sp.solve(sp.Eq(limit_flux, 1 / 2 * self.vmax_f), p)
-                assert len(tmp) == 1, (tmp, limit_flux)
-                kis[f"Ki_{p}"] = tmp[0]
-            else:
-                # competitive product inhibition
-                # Ki is just the dissociation constant of the enzyme-substrate
-                # complex
-                # find micro-reaction S + E -> E_S
-                num = denom = None
-                # enzyme-substrate complex
-                # es_sym = None
-                for reaction in self.reactions:
-                    if set(reaction.substrates) == {self.e_free, p}:
-                        denom = reaction.rate_constants[0]
-                        assert len(reaction.products) == 1
-                        assert reaction.products[0] in self.enzyme_states
-                        # es_sym = reaction.products[0]
-                        if reaction.reversible:
-                            num = reaction.rate_constants[1]
-                        break
-                    if (
-                        set(reaction.products) == {self.e_free, p}
-                        and reaction.reversible
-                    ):
-                        denom = reaction.rate_constants[1]
-                        assert len(reaction.substrates) == 1
-                        assert reaction.substrates[0] in self.enzyme_states
-                        # es_sym = reaction.substrates[0]
-                        num = reaction.rate_constants[0]
-                        break
-                else:
-                    if self.reversible:
-                        raise ValueError(
-                            f"Cannot find micro-reaction for E+{p} -> E:{p}"
-                        )
-
-                if num is None or denom is None:
-                    # FIXME if E+S -> E_S and E_S -> E+S are in separate
-                    #  reactions we need to find the dissociation reaction
-                    #  for now we, just assume there is no reverse reaction
-                    warn(
-                        f"Cannot find dissociation reaction for E:{p} -> E+{p}. "
-                        "Either because the reaction is irreversible (no problem) or because "
-                        "the reverse reaction is in a separate micro reaction "
-                        "(currently not supported)."
-                    )
-                    continue
-                kis[f"Ki_{p}"] = num / denom
         return kis
 
     def get_kinetic_parameters(self):
