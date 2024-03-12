@@ -403,11 +403,6 @@ class EnzymeReaction:
 
         NOTE: This seems rather fragile and may well fail.
         """
-        if self.reversible is False:
-            raise NotImplementedError(
-                "Only reversible reactions are currently supported."
-            )
-
         kp = self.get_kinetic_parameters()
         vmax_f = kp["V_mf"]
         vmax_r = kp["V_mr"]
@@ -432,7 +427,7 @@ class EnzymeReaction:
         else:
             assert isinstance(n, sp.Mul)
             n1 = n / sp.Mul(*self.substrates)
-            n2 = sp.Float(0)
+            n2 = sp.Integer(1)
 
         reactants = set(self.substrates + self.products)
 
@@ -453,12 +448,15 @@ class EnzymeReaction:
             coeff_prods = coeffs[tuple(sorted(self.products, key=str))]
             assert (n2 / coeff_prods - vmax_r / self.e0).simplify().is_zero
         else:
-            coeff_prods = sp.Float(1)
+            coeff_prods = sp.Integer(1)
         # assemble new numerator
         new_n = (
             sym_vmax_f
-            * sym_vmax_r
-            * (sp.Mul(*self.substrates) - sp.Mul(*self.products) / sym_keq)
+            * (sym_vmax_r if self.reversible else sp.Integer(1))
+            * (
+                sp.Mul(*self.substrates)
+                - (sp.Mul(*self.products) / sym_keq if self.reversible else sp.Float(0))
+            )
         )
 
         # now replace the denominator terms
@@ -475,7 +473,9 @@ class EnzymeReaction:
                 expr = expr.simplify()
 
                 # Each term will have either Vmax_f or Vmax_r in the numerator
-                if set(cur_reactants).isdisjoint(self.products):
+                if not self.reversible:
+                    pass
+                elif set(cur_reactants).isdisjoint(self.products):
                     # if there is no product term, substitute vmax_r
                     expr = (expr / (vmax_r / self.e0) * sym_vmax_r).simplify()
                 elif set(cur_reactants).isdisjoint(self.substrates):

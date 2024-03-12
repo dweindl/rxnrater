@@ -116,9 +116,9 @@ def test_WuYan2007_citrate_synthase():
     assert res["Km_ACCOA"] == sympify("k4*(k2r + k3)/(k2f*(k3 + k4))")
     assert res["keq_micro"] == sp.oo
     assert res["Ki_OAA"] == sympify("k1r/k1f")
-
-    # TODO: not implemented for irreversible reaction
-    # print(er.simplify_flux())
+    assert er.simplify_flux() == sympify(
+        "ACCOA*OAA*V_mf/(ACCOA*Km_OAA + ACCOA*OAA + Ki_OAA*Km_ACCOA + Km_ACCOA*OAA)"
+    )
 
 
 def test_WuYan2007_pdh():
@@ -138,6 +138,6 @@ def test_WuYan2007_pdh():
     assert res["Km_COASH"] == sympify("k2*k6*(k3r + k4)/(k3f*(k2*k4 + k2*k6 + k4*k6))")
     assert res["Km_NAD"] == sympify("k2*k4*(k5r + k6)/(k5f*(k2*k4 + k2*k6 + k4*k6))")
     assert res["keq_micro"] == sp.oo
-
-    # TODO: not implemented for irreversible reaction
-    # print(er.simplify_flux())
+    assert er.simplify_flux() == sympify(
+        "COASH*NAD*PYR*V_mf/(COASH*Km_NAD*PYR + COASH*Km_PYR*NAD + COASH*NAD*PYR + Km_COASH*NAD*PYR)"
+    )
