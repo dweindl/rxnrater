@@ -25,52 +25,6 @@ def test_WuYan2007_fumarase():
     )
 
 
-def test_WuYan2007_succinyl_coa_synthetase():
-    """Test ordered ter-ter.
-
-    See also Cook & Cleland, Enzyme kinetics and mechanism, p387f
-    """
-    # NOTE: slow
-    rxn_str = """
-    E + MgGDP -- E:MgGDP , k1f , k1r
-    E:MgGDP + SCOA -- E:MgGDP:SCOA , k2f , k2r
-    E:MgGDP:SCOA + PI -- E:MgGDP:SCOA:PI , k3f , k3r
-    E:MgGDP:SCOA:PI -- E:MgGTP:SUC + COASH , k4f , k4r
-    E:MgGTP:SUC -- E:MgGTP + SUC , k5f , k5r
-    E:MgGTP -- E + MgGTP , k6f , k6r
-    """
-    er = EnzymeReaction(rxn_str)
-    assert repr(er) == "<EnzymeReaction(MgGDP + PI + SCOA -- COASH + MgGTP + SUC)>"
-
-    res = er.get_kinetic_parameters()
-    assert res["V_mf"] == sympify("E0*k4f*k5f*k6f/(k4f*k5f + k4f*k6f + k5f*k6f)")
-    assert res["V_mr"] == sympify("E0*k1r*k2r*k3r/(k1r*k2r + k1r*k3r + k2r*k3r)")
-    assert res["Km_MgGDP"] == sympify("k4f*k5f*k6f/(k1f*(k4f*k5f + k4f*k6f + k5f*k6f))")
-    assert res["Km_SCOA"] == sympify("k4f*k5f*k6f/(k2f*(k4f*k5f + k4f*k6f + k5f*k6f))")
-    assert res["Km_PI"] == sympify(
-        "k5f*k6f*(k3r + k4f)/(k3f*(k4f*k5f + k4f*k6f + k5f*k6f))"
-    )
-    assert res["Km_COASH"] == sympify(
-        "k1r*k2r*(k3r + k4f)/(k4r*(k1r*k2r + k1r*k3r + k2r*k3r))"
-    )
-    assert res["Km_SUC"] == sympify("k1r*k2r*k3r/(k5r*(k1r*k2r + k1r*k3r + k2r*k3r))")
-    assert res["Km_MgGTP"] == sympify("k1r*k2r*k3r/(k6r*(k1r*k2r + k1r*k3r + k2r*k3r))")
-    assert res["keq_micro"] == sympify(
-        "k1f*k2f*k3f*k4f*k5f*k6f/(k1r*k2r*k3r*k4r*k5r*k6r)"
-    )
-    assert res["Ki_MgGDP"] == sympify("k1r/k1f")
-    # FIXME: there fail, but might still be correct as there are
-    #  potentially multiple ways to express those Ki values
-    #  (needs verification)
-    # assert res["Ki_SCOA"] == sympify("k2r/k2f")
-    # assert res["Ki_PI"] == sympify("k3r/k3f")
-    # assert res["Ki_COASH"] == sympify("k4f/k4r")
-    # assert res["Ki_SUC"] == sympify("k5f/k5r")
-    # assert res["Ki_MgGTP"] == sympify("k6f/k6r")
-
-    # TODO er.simplify_flux()
-
-
 def test_WuYan2007_mdh():
     """Test ordered bi-bi."""
     rxn_str = """
@@ -141,3 +95,49 @@ def test_WuYan2007_pdh():
     assert er.simplify_flux() == sympify(
         "COASH*NAD*PYR*V_mf/(COASH*Km_NAD*PYR + COASH*Km_PYR*NAD + COASH*NAD*PYR + Km_COASH*NAD*PYR)"
     )
+
+
+def test_WuYan2007_succinyl_coa_synthetase():
+    """Test ordered ter-ter.
+
+    See also Cook & Cleland, Enzyme kinetics and mechanism, p387f
+    """
+    # NOTE: slow
+    rxn_str = """
+    E + MgGDP -- E:MgGDP , k1f , k1r
+    E:MgGDP + SCOA -- E:MgGDP:SCOA , k2f , k2r
+    E:MgGDP:SCOA + PI -- E:MgGDP:SCOA:PI , k3f , k3r
+    E:MgGDP:SCOA:PI -- E:MgGTP:SUC + COASH , k4f , k4r
+    E:MgGTP:SUC -- E:MgGTP + SUC , k5f , k5r
+    E:MgGTP -- E + MgGTP , k6f , k6r
+    """
+    er = EnzymeReaction(rxn_str)
+    assert repr(er) == "<EnzymeReaction(MgGDP + PI + SCOA -- COASH + MgGTP + SUC)>"
+
+    res = er.get_kinetic_parameters()
+    assert res["V_mf"] == sympify("E0*k4f*k5f*k6f/(k4f*k5f + k4f*k6f + k5f*k6f)")
+    assert res["V_mr"] == sympify("E0*k1r*k2r*k3r/(k1r*k2r + k1r*k3r + k2r*k3r)")
+    assert res["Km_MgGDP"] == sympify("k4f*k5f*k6f/(k1f*(k4f*k5f + k4f*k6f + k5f*k6f))")
+    assert res["Km_SCOA"] == sympify("k4f*k5f*k6f/(k2f*(k4f*k5f + k4f*k6f + k5f*k6f))")
+    assert res["Km_PI"] == sympify(
+        "k5f*k6f*(k3r + k4f)/(k3f*(k4f*k5f + k4f*k6f + k5f*k6f))"
+    )
+    assert res["Km_COASH"] == sympify(
+        "k1r*k2r*(k3r + k4f)/(k4r*(k1r*k2r + k1r*k3r + k2r*k3r))"
+    )
+    assert res["Km_SUC"] == sympify("k1r*k2r*k3r/(k5r*(k1r*k2r + k1r*k3r + k2r*k3r))")
+    assert res["Km_MgGTP"] == sympify("k1r*k2r*k3r/(k6r*(k1r*k2r + k1r*k3r + k2r*k3r))")
+    assert res["keq_micro"] == sympify(
+        "k1f*k2f*k3f*k4f*k5f*k6f/(k1r*k2r*k3r*k4r*k5r*k6r)"
+    )
+    assert res["Ki_MgGDP"] == sympify("k1r/k1f")
+    # FIXME: there fail, but might still be correct as there are
+    #  potentially multiple ways to express those Ki values
+    #  (needs verification)
+    # assert res["Ki_SCOA"] == sympify("k2r/k2f")
+    # assert res["Ki_PI"] == sympify("k3r/k3f")
+    # assert res["Ki_COASH"] == sympify("k4f/k4r")
+    # assert res["Ki_SUC"] == sympify("k5f/k5r")
+    # assert res["Ki_MgGTP"] == sympify("k6f/k6r")
+
+    # TODO er.simplify_flux()
