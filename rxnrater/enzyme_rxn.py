@@ -2,6 +2,7 @@ from .micro_rxn import Rxn
 from itertools import chain
 import sympy as sp
 from ._utils import gcd
+from warnings import warn
 
 
 class EnzymeReaction:
@@ -17,6 +18,9 @@ class EnzymeReaction:
         self.reactions = self._parse_reaction(rxn_str)
         # symbol for the total enzyme concentration
         self.e0 = sp.Symbol("E0")
+        # symbol for free enzyme
+        self.e_free = sp.Symbol("E")
+
         self.enzyme_states = []
 
         for rxn in self.reactions:
@@ -26,6 +30,9 @@ class EnzymeReaction:
         self.substrates: list[sp.Symbol] = []
         self.products: list[sp.Symbol] = []
         self._set_net_reaction()
+
+        self.kinetic_parameters = None
+        # TODO compute on demand
         self.stoichiometric_matrix: sp.Matrix = self._create_stoichiometric_matrix()
         self.micro_fluxes: sp.Matrix = self._get_micro_fluxes()
         self.steadystate_concentrations: dict[
@@ -47,6 +54,8 @@ class EnzymeReaction:
             if not line.strip():
                 continue
             res.append(Rxn.from_string(line))
+
+        # TODO: warn if rate constants are reused
         return res
 
     def _set_net_reaction(self):
@@ -213,6 +222,137 @@ class EnzymeReaction:
 
         return kms
 
+    def _compute_kis(self) -> dict[str, sp.Expr]:
+        """Compute the inhibition constants of the reaction."""
+        # TODO Consider computing (all possible) Ki parameters based on the rate
+        # TODO: missing Kii parameters
+        # expression denominator term coefficients
+        # see https://doi.org/10.4324/9780203833575 p41ff
+        kis: dict[str, sp.Expr] = {}
+
+        for s in self.substrates:
+            # set other substrates to 0
+            limit_flux = -self.net_flux.subs(
+                {s_: 0 for s_ in self.substrates if s_ != s}
+            )
+            # let products approach inf
+            for p in self.products:
+                limit_flux = sp.limit(limit_flux, p, sp.oo).cancel()
+
+            # not completely sure this is generally valid
+            if limit_flux.has(s):
+                # uncompetitive product inhibition
+                # compute substrate concentration for half-maximum backward rate
+                tmp = sp.solve(sp.Eq(limit_flux, 1 / 2 * self.vmax_r), s)
+                assert len(tmp) == 1, (tmp, limit_flux)
+                kis[f"Ki_{s}"] = tmp[0]
+            else:
+                # competitive product inhibition
+                # Ki is just the dissociation constant of the enzyme-substrate
+                # complex
+                # find micro-reaction S + E -> E_S
+                num = denom = None
+                # enzyme-substrate complex
+                # es_sym = None
+                for reaction in self.reactions:
+                    if set(reaction.substrates) == {self.e_free, s}:
+                        denom = reaction.rate_constants[0]
+                        assert len(reaction.products) == 1
+                        assert reaction.products[0] in self.enzyme_states
+                        # es_sym = reaction.products[0]
+                        if reaction.reversible:
+                            num = reaction.rate_constants[1]
+                        break
+                    if (
+                        set(reaction.products) == {self.e_free, s}
+                        and reaction.reversible
+                    ):
+                        denom = reaction.rate_constants[1]
+                        assert len(reaction.substrates) == 1
+                        assert reaction.substrates[0] in self.enzyme_states
+                        # es_sym = reaction.substrates[0]
+                        num = reaction.rate_constants[0]
+                        break
+                else:
+                    if self.reversible:
+                        raise ValueError(
+                            f"Cannot find micro-reaction for E+{s} -> E:{s}"
+                        )
+
+                # if E+S -> E_S and E_S -> E+S are in separate reactions we
+                # need to find the dissociation reaction of `es_sym`
+                if num is None or denom is None:
+                    warn(
+                        f"Cannot find dissociation reaction for E:{s} -> E+{s}. "
+                        "Either because the reaction is irreversible (no problem) or because "
+                        "the reverse reaction is in a separate micro reaction "
+                        "(currently not supported)."
+                    )
+                    continue
+                kis[f"Ki_{s}"] = num / denom
+
+        # TODO refactor out common code
+        for p in self.products:
+            # set other products to 0
+            limit_flux = self.net_flux.subs({p_: 0 for p_ in self.products if p_ != p})
+            # let substrates approach inf
+            for s in self.substrates:
+                limit_flux = sp.limit(limit_flux, s, sp.oo).cancel()
+
+            # not completely sure this is generally valid
+            if limit_flux.has(p):
+                # uncompetitive product inhibition
+                # compute product concentration for half-maximum forward rate
+                tmp = sp.solve(sp.Eq(limit_flux, 1 / 2 * self.vmax_f), p)
+                assert len(tmp) == 1, (tmp, limit_flux)
+                kis[f"Ki_{p}"] = tmp[0]
+            else:
+                # competitive product inhibition
+                # Ki is just the dissociation constant of the enzyme-substrate
+                # complex
+                # find micro-reaction S + E -> E_S
+                num = denom = None
+                # enzyme-substrate complex
+                # es_sym = None
+                for reaction in self.reactions:
+                    if set(reaction.substrates) == {self.e_free, p}:
+                        denom = reaction.rate_constants[0]
+                        assert len(reaction.products) == 1
+                        assert reaction.products[0] in self.enzyme_states
+                        # es_sym = reaction.products[0]
+                        if reaction.reversible:
+                            num = reaction.rate_constants[1]
+                        break
+                    if (
+                        set(reaction.products) == {self.e_free, p}
+                        and reaction.reversible
+                    ):
+                        denom = reaction.rate_constants[1]
+                        assert len(reaction.substrates) == 1
+                        assert reaction.substrates[0] in self.enzyme_states
+                        # es_sym = reaction.substrates[0]
+                        num = reaction.rate_constants[0]
+                        break
+                else:
+                    if self.reversible:
+                        raise ValueError(
+                            f"Cannot find micro-reaction for E+{p} -> E:{p}"
+                        )
+
+                if num is None or denom is None:
+                    # FIXME if E+S -> E_S and E_S -> E+S are in separate
+                    #  reactions we need to find the dissociation reaction
+                    #  for now we, just assume there is no reverse reaction
+                    warn(
+                        f"Cannot find dissociation reaction for E:{p} -> E+{p}. "
+                        "Either because the reaction is irreversible (no problem) or because "
+                        "the reverse reaction is in a separate micro reaction "
+                        "(currently not supported)."
+                    )
+                    continue
+                kis[f"Ki_{p}"] = num / denom
+        return kis
+
     def get_kinetic_parameters(self):
         """Get the kinetic parameters of the reaction.
 
@@ -221,6 +361,9 @@ class EnzymeReaction:
         Half-saturation constants are the substrate (product) concentration at
         which the reaction rate is half of the maximum forward (backward) rate.
         """
+        if self.kinetic_parameters is not None:
+            return self.kinetic_parameters
+
         flux = self.net_flux
         v_max_f, v_max_r = self._compute_vmax()
 
@@ -229,6 +372,7 @@ class EnzymeReaction:
         pars["V_mr"] = v_max_r
         pars["flux"] = flux
         pars["keq_micro"] = sp.oo
+        pars |= self._compute_kis()
 
         if not self.reversible:
             return pars
@@ -246,8 +390,150 @@ class EnzymeReaction:
         keq = ss_prod_0 * sp.Mul(*self.products[1:]) / sp.Mul(*self.substrates)
         pars["keq_micro"] = keq
 
+        self.kinetic_parameters = pars
         return pars
 
     @property
     def reversible(self):
         return not self.vmax_r.is_zero
+
+    def simplify_flux(self):
+        """Substitute the kinetic parameters for the microscopic rate
+        constants.
+
+        NOTE: This seems rather fragile and may well fail.
+        """
+        if self.reversible is False:
+            raise NotImplementedError(
+                "Only reversible reactions are currently supported."
+            )
+
+        kp = self.get_kinetic_parameters()
+        vmax_f = kp["V_mf"]
+        vmax_r = kp["V_mr"]
+        sym_vmax_f = sp.Symbol("V_mf")
+        sym_vmax_r = sp.Symbol("V_mr")
+        kms = {sp.Symbol(k): v for k, v in kp.items() if k.startswith("Km_")}
+        kis = {sp.Symbol(k): v for k, v in kp.items() if k.startswith("Ki_")}
+        keq_micro = kp["keq_micro"]
+        sym_keq = sp.Symbol("Keq")
+        micro_rate_constants = set(
+            chain.from_iterable(rxn.rate_constants for rxn in self.reactions)
+        )
+
+        # see https://doi.org/10.1016/0926-6569(63)90211-6.
+        n, d = (self.net_flux / self.e0).cancel().as_numer_denom()
+        if self.reversible:
+            assert isinstance(n, sp.Add)
+            assert len(n.args) == 2
+            n1 = n.args[0] / sp.Mul(*self.substrates)
+            n2 = -n.args[1] / sp.Mul(*self.products)
+            assert n1 / n2 == keq_micro
+        else:
+            assert isinstance(n, sp.Mul)
+            n1 = n / sp.Mul(*self.substrates)
+            n2 = sp.Float(0)
+
+        reactants = set(self.substrates + self.products)
+
+        # group by common reactant factors
+        # reactants => coefficients
+        coeffs = {}
+        for expr in d.args:
+            cur_reactants = expr.free_symbols & reactants
+            assert (expr / sp.Mul(*cur_reactants)).free_symbols.isdisjoint(reactants)
+            key = tuple(sorted(cur_reactants, key=str))
+            coeffs[key] = coeffs.get(key, sp.Float(0)) + expr / sp.Mul(*cur_reactants)
+
+        # find coefficients the product of substrates and products in the
+        # denominator
+        coeff_subs = coeffs[tuple(sorted(self.substrates, key=str))]
+        assert (n1 / coeff_subs - vmax_f / self.e0).simplify().is_zero
+        if self.reversible:
+            coeff_prods = coeffs[tuple(sorted(self.products, key=str))]
+            assert (n2 / coeff_prods - vmax_r / self.e0).simplify().is_zero
+        else:
+            coeff_prods = sp.Float(1)
+        # assemble new numerator
+        new_n = (
+            sym_vmax_f
+            * sym_vmax_r
+            * (sp.Mul(*self.substrates) - sp.Mul(*self.products) / sym_keq)
+        )
+
+        # now replace the denominator terms
+        d_summands = []
+
+        for cur_reactants, coeff in coeffs.items():
+            expr = None
+            # try once with vf, once with vr substitution,
+            #  see which one gets rid of all rate constants
+            # is there any rule for the mixed product/substrate case?
+            #  there has to be ...
+            for trial in [1, 2]:
+                expr = coeff * n2 / coeff_prods / coeff_subs
+                expr = expr.simplify()
+
+                # Each term will have either Vmax_f or Vmax_r in the numerator
+                if set(cur_reactants).isdisjoint(self.products):
+                    # if there is no product term, substitute vmax_r
+                    expr = (expr / (vmax_r / self.e0) * sym_vmax_r).simplify()
+                elif set(cur_reactants).isdisjoint(self.substrates):
+                    expr = (
+                        expr / (vmax_f / self.e0) * sym_vmax_f / sym_keq * keq_micro
+                    ).simplify()
+                else:
+                    # mixed products and substrates
+                    if trial == 1:
+                        expr = (expr / (vmax_r / self.e0) * sym_vmax_r).simplify()
+                    elif trial == 2:
+                        expr = (
+                            expr / (vmax_f / self.e0) * sym_vmax_f / sym_keq * keq_micro
+                        ).simplify()
+
+                # - try any km of a reactant that is not included or any Ki
+                # - Km always occurs in the numerator, Ki can occur everywhere
+                # - if the reactants only include substrates, only substrate
+                #   parameters can be present, vice versa for products
+                #   (mixed -> both)
+                # - there is never a Ki and Km of the same reactant in the
+                #   same term
+
+                # if count_ops is reduced by a substitution, we accept it
+                for km_sym, km_expr in kms.items():
+                    if sp.Symbol(km_sym.name.removeprefix("Km_")) in cur_reactants:
+                        continue
+
+                    trial_expr = (expr / km_expr * km_sym).simplify()
+                    if trial_expr.count_ops() < expr.count_ops():
+                        expr = trial_expr
+                        # there is maximally one K_m in each coefficient
+                        break
+
+                for ki_sym, ki_expr in kis.items():
+                    trial_expr = (expr / ki_expr * ki_sym).simplify()
+                    if trial_expr.count_ops() < expr.count_ops():
+                        # Ki is in the numerator
+                        expr = trial_expr
+                    elif sp.Symbol(ki_sym.name.removeprefix("Ki_")) in cur_reactants:
+                        trial_expr = (expr * ki_expr / ki_sym).simplify()
+                        if trial_expr.count_ops() < expr.count_ops():
+                            # Ki is in the denominator
+                            # occurs there only if the respective reactant is included
+                            # in the current term
+                            expr = trial_expr
+
+                if expr.free_symbols.isdisjoint(micro_rate_constants):
+                    d_summands.append(expr * sp.Mul(*cur_reactants))
+                    break
+
+                if set(cur_reactants).isdisjoint(self.products):
+                    # vmax{f,r} choice is clear, no need to retry
+                    break
+            else:
+                raise ValueError(
+                    "Could not simplify denominator term: " f"{cur_reactants}: {expr}"
+                )
+
+        new_d = sp.Add(*d_summands)
+        return new_n / new_d

@@ -18,9 +18,18 @@ def test_WuYan2007_fumarase():
     assert res["Km_FUM"] == sympify("(k1r + k2f) / k1f")
     assert res["Km_MAL"] == sympify("(k1r + k2f) / k2r")
     assert res["keq_micro"] == sympify("k1f*k2f/(k1r*k2r)")
+    # Should Ki be computed in this case?
+    assert res["Ki_FUM"] == sympify("k1r/k1f")
+    assert er.simplify_flux() == sympify(
+        "V_mf*V_mr*(FUM - MAL/Keq)/(FUM*V_mr + Km_FUM*V_mr + MAL*V_mf/Keq)"
+    )
 
 
 def test_WuYan2007_succinyl_coa_synthetase():
+    """Test ordered ter-ter.
+
+    See also Cook & Cleland, Enzyme kinetics and mechanism, p387f
+    """
     # NOTE: slow
     rxn_str = """
     E + MgGDP -- E:MgGDP , k1f , k1r
@@ -49,9 +58,21 @@ def test_WuYan2007_succinyl_coa_synthetase():
     assert res["keq_micro"] == sympify(
         "k1f*k2f*k3f*k4f*k5f*k6f/(k1r*k2r*k3r*k4r*k5r*k6r)"
     )
+    assert res["Ki_MgGDP"] == sympify("k1r/k1f")
+    # FIXME: there fail, but might still be correct as there are
+    #  potentially multiple ways to express those Ki values
+    #  (needs verification)
+    # assert res["Ki_SCOA"] == sympify("k2r/k2f")
+    # assert res["Ki_PI"] == sympify("k3r/k3f")
+    # assert res["Ki_COASH"] == sympify("k4f/k4r")
+    # assert res["Ki_SUC"] == sympify("k5f/k5r")
+    # assert res["Ki_MgGTP"] == sympify("k6f/k6r")
+
+    # TODO er.simplify_flux()
 
 
 def test_WuYan2007_mdh():
+    """Test ordered bi-bi."""
     rxn_str = """
     E + NAD -- E:NAD , k1f , k1r
     E:NAD + MAL -- E:NAD:MAL , k2f , k2r
@@ -67,6 +88,17 @@ def test_WuYan2007_mdh():
     assert res["Km_OAA"] == sympify("k1r*(k2r + k3f)/(k3r*(k1r + k2r))")
     assert res["Km_NADH"] == sympify("k1r*k2r/(k4r*(k1r + k2r))")
     assert res["keq_micro"] == sympify("k1f*k2f*k3f*k4f/(k1r*k2r*k3r*k4r)")
+    assert res["Ki_NAD"] == sympify("k1r/k1f")
+    assert res["Ki_MAL"] == sympify("(k1r+k2r)/k2f")
+    assert res["Ki_OAA"] == sympify("(k3f + k4f)/k3r")
+    assert res["Ki_NADH"] == sympify("k4f / k4r")
+    assert er.simplify_flux() == sympify(
+        "V_mf*V_mr*(MAL*NAD - NADH*OAA/Keq)/(Ki_NAD*Km_MAL*V_mr "
+        "+ Km_MAL*NAD*V_mr + Km_NAD*MAL*V_mr + MAL*NAD*V_mr "
+        "+ MAL*NAD*OAA*V_mr/Ki_OAA + Km_NAD*MAL*NADH*V_mr/Ki_NADH "
+        "+ Km_NADH*OAA*V_mf/Keq + Km_OAA*NADH*V_mf/Keq + NADH*OAA*V_mf/Keq "
+        "+ Km_NADH*NAD*OAA*V_mf/(Keq*Ki_NAD) + MAL*NADH*OAA*V_mf/(Keq*Ki_MAL))"
+    )
 
 
 def test_WuYan2007_citrate_synthase():
@@ -83,6 +115,10 @@ def test_WuYan2007_citrate_synthase():
     assert res["Km_OAA"] == sympify("k3*k4/(k1f*(k3 + k4))")
     assert res["Km_ACCOA"] == sympify("k4*(k2r + k3)/(k2f*(k3 + k4))")
     assert res["keq_micro"] == sp.oo
+    assert res["Ki_OAA"] == sympify("k1r/k1f")
+
+    # TODO: not implemented for irreversible reaction
+    # print(er.simplify_flux())
 
 
 def test_WuYan2007_pdh():
@@ -102,3 +138,6 @@ def test_WuYan2007_pdh():
     assert res["Km_COASH"] == sympify("k2*k6*(k3r + k4)/(k3f*(k2*k4 + k2*k6 + k4*k6))")
     assert res["Km_NAD"] == sympify("k2*k4*(k5r + k6)/(k5f*(k2*k4 + k2*k6 + k4*k6))")
     assert res["keq_micro"] == sp.oo
+
+    # TODO: not implemented for irreversible reaction
+    # print(er.simplify_flux())
