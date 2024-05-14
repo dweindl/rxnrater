@@ -5,6 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 dynamic = ["version"]
 name = "rxnrater"
+requires-python = ">=3.10"
 description = "steady-state rate equations for enzyme-catalyzed reactions."
 readme = "README.md"
 license = {text = "BSD 3-clause"}
