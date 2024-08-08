@@ -4,11 +4,14 @@ import sympy as sp
 
 
 def test_WuYan2007_fumarase():
+    """Test reversible uni-uni."""
     rxn_str = """
     E + FUM -- E:FUM , k1f , k1r
     E:FUM -- E + MAL , k2f , k2r
     """
     er = EnzymeReaction(rxn_str)
+    assert repr(er) == "<EnzymeReaction(FUM -- MAL)>"
+
     res = er.get_kinetic_parameters()
     assert res["V_mf"] == sympify("E0 * k2f")
     assert res["V_mr"] == sympify("E0 * k1r")
@@ -26,7 +29,7 @@ def test_WuYan2007_fumarase():
 
 
 def test_WuYan2007_mdh():
-    """Test ordered bi-bi."""
+    """Test reversible ordered bi-bi."""
     rxn_str = """
     E + NAD -- E:NAD , k1f , k1r
     E:NAD + MAL -- E:NAD:MAL , k2f , k2r
@@ -34,6 +37,8 @@ def test_WuYan2007_mdh():
     E:NADH -- E + NADH , k4f , k4r
     """
     er = EnzymeReaction(rxn_str)
+    assert repr(er) == "<EnzymeReaction(MAL + NAD -- NADH + OAA)>"
+
     res = er.get_kinetic_parameters()
     assert res["V_mf"] == sympify("E0*k3f*k4f/(k3f + k4f)")
     assert res["V_mr"] == sympify("E0*k1r*k2r/(k1r + k2r)")
@@ -85,6 +90,7 @@ def test_WuYan2007_pdh():
     E:NAD -> E + NADH , k6
     """
     er = EnzymeReaction(rxn_str)
+    assert repr(er) == "<EnzymeReaction(COASH + NAD + PYR -- ACCOA + CO2 + NAD)>"
     res = er.get_kinetic_parameters()
     assert res["V_mf"] == sympify("E0*k2*k4*k6/(k2*k4 + k2*k6 + k4*k6)")
     assert res["V_mr"] == 0
