@@ -90,7 +90,7 @@ def test_WuYan2007_pdh():
     E:NAD -> E + NADH , k6
     """
     er = EnzymeReaction(rxn_str)
-    assert repr(er) == "<EnzymeReaction(COASH + NAD + PYR -- ACCOA + CO2 + NAD)>"
+    assert repr(er) == "<EnzymeReaction(COASH + NAD + PYR -- ACCOA + CO2 + NADH)>"
     res = er.get_kinetic_parameters()
     assert res["V_mf"] == sympify("E0*k2*k4*k6/(k2*k4 + k2*k6 + k4*k6)")
     assert res["V_mr"] == 0
