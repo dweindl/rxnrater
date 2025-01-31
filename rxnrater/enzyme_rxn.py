@@ -263,14 +263,12 @@ class EnzymeReaction:
         """Get the microscopic rate constants of the reaction."""
         return set(chain.from_iterable(rxn.rate_constants for rxn in self.reactions))
 
-    def simplify_flux(self):
+    def simplify_flux(self, **kwargs):
         """Substitute the kinetic parameters for the microscopic rate
         constants.
         """
         cf = self.coeff_form()
-        simplified_flux, macro_pars = cf.simplify()
-
-        return simplified_flux, macro_pars
+        return cf.simplify(**kwargs)
 
     def coeff_form(self):
         """Get the rate equation in coefficient form."""
@@ -396,7 +394,7 @@ class CoefficientFormRateEquation:
 
         return candidates
 
-    def simplify(self):
+    def simplify(self, exhaustive: bool = False) -> tuple[sp.Expr, dict[str, sp.Expr]]:
         """Replace micro-rate constants by macroscopic kinetic parameters."""
         sym_vmax_f = sp.Symbol("V_mf")
         sym_vmax_r = sp.Symbol("V_mr") if self.reversible else sp.Integer(1)
@@ -445,6 +443,8 @@ class CoefficientFormRateEquation:
         #    if V1 is used, Ki values to cancel out the substrates
         #    if V2 is used, Ki values to cancel out the products
         print()
+
+        solutions = []
 
         for cur_candidates in product(*candidates.values()):
             cur_candidates = dict(zip(candidates.keys(), cur_candidates))
@@ -529,10 +529,36 @@ class CoefficientFormRateEquation:
                 # all coefficients match
                 print("MATCH", cur_candidates)
                 # TODO: add option for exhaustive search
-                break
+                simplified_rate_eq = self._assemble_simplified(
+                    simplified,
+                    cur_candidates,
+                    sym_vmax_f,
+                    sym_vmax_r,
+                    sym_keq,
+                    keq,
+                    V1,
+                    V2,
+                )
+                if not exhaustive:
+                    return simplified_rate_eq, cur_candidates
+                solutions.append((simplified_rate_eq, cur_candidates))
         else:
+            if exhaustive and solutions:
+                return solutions
             raise AssertionError("No match found")
 
+    def _assemble_simplified(
+        self,
+        simplified: dict,
+        cur_candidates: dict[str, sp.Expr],
+        sym_vmax_f: sp.Symbol,
+        sym_vmax_r: sp.Symbol,
+        sym_keq: sp.Symbol,
+        keq: sp.Expr,
+        V1: sp.Expr,
+        V2: sp.Expr,
+    ) -> tuple[sp.Expr, dict[str, sp.Expr]]:
+        """Assemble the simplified rate equation."""
         # compute V_mr from Haldane relationship
         # There is always at least a K_eq = V1/V2 * \prod K_i_or_m_product / \prod K_i_or_m_substrate
         # We just need to find out which ones
@@ -579,7 +605,7 @@ class CoefficientFormRateEquation:
             / sp.Add(*[sp.Mul(*k) * v for k, v in simplified.items()])
         )
 
-        return simplified, cur_candidates
+        return simplified
 
     @property
     def e0(self) -> sp.Symbol:

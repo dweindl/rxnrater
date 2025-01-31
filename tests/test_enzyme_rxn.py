@@ -61,6 +61,23 @@ def _check_kinetic_flux_expr(
         warn(f"Flux expressions differ: {flux_act} != {flux_exp}")
 
 
+def check_exhaustive(er: EnzymeReaction, solutions_exp):
+    solutions_act = er.simplify_flux(exhaustive=True)
+    assert len(solutions_act) == len(solutions_exp)
+
+    for flux_exp, pars_exp in solutions_exp:
+        for flux_act, pars_act in solutions_act:
+            try:
+                _check_kinetic_flux_expr(
+                    flux_act, pars_act, flux_exp, pars_exp, er.micro_rate_constants
+                )
+                break
+            except AssertionError:
+                pass
+        else:
+            raise AssertionError(f"Missing expected solution: {flux_exp}, {pars_exp}")
+
+
 def test_cleland1963_ordered_uni_bi():
     """Test ordered uni-bi (Cleland1963, mech. 14)."""
     rxn_str = """
@@ -145,34 +162,47 @@ def test_cleland1963_ordered_bi_bi():
         res["V_mr"] / (res["Km_P"] * E0) * sympify("1 + k5 / k4")
     )
 
-    flux_act, pars = er.simplify_flux()
-    assert pars["Ki_A"] == sympify("k2/k1")
-    # TODO make deterministic
-    assert pars["Ki_B"] == sympify("k4/k3") or pars["Ki_B"] == sympify("(k2 + k4)/k3")
-    assert pars["Ki_P"] == sympify("k5/k6") or pars["Ki_P"] == sympify("(k5 + k7)/k6")
-    assert pars["Ki_Q"] == sympify("k7/k8")
-
-    assert flux_act.equals(
-        sympify(
-            "V_mf*V_mr*(A * B - P*Q/Keq)/("
-            "Ki_A * Km_B * V_mr + Km_B * V_mr * A + Km_A * V_mr * B"
-            "+ V_mr * A * B + Km_Q * V_mf * P / Keq + Km_P * V_mf * Q / Keq"
-            "+ V_mf * P * Q / Keq + Km_Q * V_mf * A * P / (Keq * Ki_A)"
-            # last two terms differ, depending on the choice of Ki_B, Ki_P
-            "+ Km_A * V_mr * B * Q / Ki_Q + V_mr * A * B * P / Ki_P "
-            "+ V_mf * B * P * Q / (Ki_B * Keq))"
-        )
-    ) or flux_act.equals(
-        sympify(
-            "V_mf*V_mr*(A*B - P*Q/Keq)/("
-            "Ki_A*Km_B*V_mr + A*Km_B*V_mr + B*Km_A*V_mr"
-            "+ A*B*V_mr + Km_Q*P*V_mf/Keq +  Km_P*Q*V_mf/Keq   "
-            "+ P*Q*V_mf/Keq + A*Km_Q*P*V_mf/(Keq*Ki_A)  "
-            "+ B*Km_A*Q*V_mr/Ki_Q + A*B*Km_Q*P*V_mf/(Keq*Ki_A*Ki_B) "
-            "+ B*Km_A*P*Q*V_mr/(Ki_P*Ki_Q) "
-            ")"
-        )
-    )
+    pars_exp = {
+        "Km_A": sympify("k5*k7/(k1*k5 + k1*k7)"),
+        "Km_B": sympify("(k4*k7 + k5*k7)/(k3*k5 + k3*k7)"),
+        "Km_P": sympify("(k2*k4 + k2*k5)/(k2*k6 + k4*k6)"),
+        "Km_Q": sympify("k2*k4/(k2*k8 + k4*k8)"),
+        "Ki_A": sympify("k2/k1"),
+        "Ki_B": sympify("(k2 + k4)/k3"),
+        "Ki_P": sympify("(k5 + k7)/k6"),
+        "Ki_Q": sympify("k7/k8"),
+    }
+    solutions_exp = [
+        (
+            sympify(
+                "V_mf*V_mr*(A * B - P*Q/Keq)/("
+                "Ki_A * Km_B * V_mr + Km_B * V_mr * A + Km_A * V_mr * B"
+                "+ V_mr * A * B + Km_Q * V_mf * P / Keq + Km_P * V_mf * Q / Keq"
+                "+ V_mf * P * Q / Keq + Km_Q * V_mf * A * P / (Keq * Ki_A)"
+                # last two terms differ, depending on the choice of Ki_B, Ki_P
+                "+ Km_A * V_mr * B * Q / Ki_Q + V_mr * A * B * P / Ki_P "
+                "+ V_mf * B * P * Q / (Ki_B * Keq))"
+            ),
+            pars_exp,
+        ),
+        (
+            sympify(
+                "V_mf*V_mr*(A*B - P*Q/Keq)/("
+                "Ki_A*Km_B*V_mr + A*Km_B*V_mr + B*Km_A*V_mr"
+                "+ A*B*V_mr + Km_Q*P*V_mf/Keq +  Km_P*Q*V_mf/Keq   "
+                "+ P*Q*V_mf/Keq + A*Km_Q*P*V_mf/(Keq*Ki_A)  "
+                "+ B*Km_A*Q*V_mr/Ki_Q + A*B*Km_Q*P*V_mf/(Keq*Ki_A*Ki_B) "
+                "+ B*Km_A*P*Q*V_mr/(Ki_P*Ki_Q) "
+                ")"
+            ),
+            pars_exp
+            | {
+                "Ki_B": sympify("k4/k3"),
+                "Ki_P": sympify("k5/k6"),
+            },
+        ),
+    ]
+    check_exhaustive(er, solutions_exp)
 
 
 def test_cleland1963_theorell_chance():
@@ -303,7 +333,6 @@ def test_WuYan2007_fumarase():
     )
 
 
-@pytest.mark.flaky(reason="Different solutions possible", reruns=15)
 def test_WuYan2007_mdh():
     """Test reversible ordered bi-bi."""
     rxn_str = """
@@ -324,30 +353,50 @@ def test_WuYan2007_mdh():
     assert res["Km_NADH"] == sympify("k1r*k2r/(k4r*(k1r + k2r))")
     assert res["keq_micro"] == sympify("k1f*k2f*k3f*k4f/(k1r*k2r*k3r*k4r)")
 
-    # TODO two terms differ, but are equivalent
-    # TODO compute all valid solutions
-    flux_exp = sympify(
-        "V_mf*V_mr*(MAL*NAD - NADH*OAA/Keq)/(Ki_NAD*Km_MAL*V_mr "
-        "+ Km_MAL*NAD*V_mr + Km_NAD*MAL*V_mr + MAL*NAD*V_mr "
-        "+ MAL*NAD*OAA*V_mr/Ki_OAA + Km_NAD*MAL*NADH*V_mr/Ki_NADH "
-        # ^^^^^^^^^^^^^^^^^^^^^
-        "+ Km_NADH*OAA*V_mf/Keq + Km_OAA*NADH*V_mf/Keq + NADH*OAA*V_mf/Keq "
-        "+ Km_NADH*NAD*OAA*V_mf/(Keq*Ki_NAD) + MAL*NADH*OAA*V_mf/(Keq*Ki_MAL))"
-        #                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
     pars_exp = {
         "Km_NAD": sympify("k3f*k4f/(k1f*(k3f + k4f))"),
         "Km_MAL": sympify("k4f*(k2r + k3f)/(k2f*(k3f + k4f))"),
         "Km_OAA": sympify("k1r*(k2r + k3f)/(k3r*(k1r + k2r))"),
         "Km_NADH": sympify("k1r*k2r/(k4r*(k1r + k2r))"),
         "Ki_NAD": sympify("k1r/k1f"),
-        # FIXME: different, but equivalent solution (k2r/k2f) produced
-        # "Ki_MAL": sympify("(k1r+k2r)/k2f"),
-        # FIXME: different, but equivalent solution (k3f/k3r) produced
-        # "Ki_OAA": sympify("(k3f + k4f)/k3r"),
+        # different, but equivalent solution (k2r/k2f) possible
+        "Ki_MAL": sympify("(k1r+k2r)/k2f"),
+        # different, but equivalent solution (k3f/k3r) possible
+        "Ki_OAA": sympify("(k3f + k4f)/k3r"),
         "Ki_NADH": sympify("k4f / k4r"),
     }
-    check_kinetic_flux_expr(er, flux_exp, pars_exp)
+
+    solutions_exp = [
+        (
+            sympify(
+                "V_mf*V_mr*(MAL*NAD - NADH*OAA/Keq)/(Ki_NAD*Km_MAL*V_mr "
+                "+ Km_MAL*NAD*V_mr + Km_NAD*MAL*V_mr + MAL*NAD*V_mr "
+                "+ MAL*NAD*OAA*V_mr/Ki_OAA + Km_NAD*MAL*NADH*V_mr/Ki_NADH "
+                # ^^^^^^^^^^^^^^^^^^^^^
+                "+ Km_NADH*OAA*V_mf/Keq + Km_OAA*NADH*V_mf/Keq + NADH*OAA*V_mf/Keq "
+                "+ Km_NADH*NAD*OAA*V_mf/(Keq*Ki_NAD) + MAL*NADH*OAA*V_mf/(Keq*Ki_MAL))"
+                #                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ),
+            pars_exp,
+        ),
+        (
+            sympify(
+                "V_mf*V_mr*(MAL*NAD - NADH*OAA/Keq)/(Ki_NAD*Km_MAL*V_mr "
+                "+ Km_MAL*NAD*V_mr + Km_NAD*MAL*V_mr + MAL*NAD*V_mr "
+                "+ Km_NADH*MAL*NAD*OAA*V_mf/(Keq*Ki_MAL*Ki_NAD) + Km_NAD*MAL*NADH*V_mr/Ki_NADH "
+                # ^^^^^^^^^^^^^^^^^^^^^
+                "+ Km_NADH*OAA*V_mf/Keq + Km_OAA*NADH*V_mf/Keq + NADH*OAA*V_mf/Keq "
+                "+ Km_NADH*NAD*OAA*V_mf/(Keq*Ki_NAD) + Km_NAD*MAL*NADH*OAA*V_mr/(Ki_NADH*Ki_OAA))"
+                #                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            ),
+            pars_exp
+            | {
+                "Ki_MAL": sympify("k2r/k2f"),
+                "Ki_OAA": sympify("k3f/k3r"),
+            },
+        ),
+    ]
+    check_exhaustive(er, solutions_exp)
 
 
 def test_WuYan2007_citrate_synthase():

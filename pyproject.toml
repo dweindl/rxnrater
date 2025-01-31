@@ -23,10 +23,20 @@ maintainers = [
 dev = [
     "pytest",
     "pytest-cov",
-    "pytest-rerunfailures",
     "hatch",
     "tox",
     "pre-commit",
 ]
 [tool.hatch.version]
 path = "rxnrater/__init__.py"
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+    "rxnrater",
+]
+addopts = [
+    "-v",
+    "--durations=0",
+    "--durations-min=5"
+]
