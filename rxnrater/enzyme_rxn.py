@@ -403,7 +403,15 @@ class CoefficientFormRateEquation:
         # compute admissible values for K_m_{} and K_i_{}
         candidates = self._collect_candidates()
 
-        from pprint import pprint
+        debug = False
+        if debug:
+            from pprint import pprint
+        else:
+
+            def pprint(*args, **kwargs):
+                pass
+
+            print = pprint
 
         pprint(
             candidates,
