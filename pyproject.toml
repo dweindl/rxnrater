@@ -23,6 +23,7 @@ maintainers = [
 dev = [
     "pytest",
     "pytest-cov",
+    "pytest-rerunfailures",
     "hatch",
     "tox",
     "pre-commit",

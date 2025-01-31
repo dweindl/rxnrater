@@ -1,5 +1,5 @@
 from .micro_rxn import Rxn
-from itertools import chain
+from itertools import chain, product
 import sympy as sp
 from ._utils import gcd
 
@@ -59,6 +59,7 @@ class EnzymeReaction:
 
     def _set_net_reaction(self):
         """Determine the net reaction of the micro-reactions."""
+        # FIXME: this does not work for random mechanisms
         net_reaction = sp.Add(
             *chain.from_iterable(rxn.products for rxn in self.reactions)
         ) - sp.Add(*chain.from_iterable(rxn.substrates for rxn in self.reactions))
@@ -215,78 +216,6 @@ class EnzymeReaction:
 
         return kms
 
-    def _compute_kis(self) -> dict[str, sp.Expr]:
-        """Compute the inhibition constants of the reaction."""
-        # TODO Consider computing (all possible) Ki parameters based on the rate
-        # TODO: missing Kii parameters
-        # expression denominator term coefficients
-        # see https://doi.org/10.4324/9780203833575 p41ff
-        kis: dict[str, sp.Expr] = {}
-
-        for substrates, products, net_flux, vmax in zip(
-            [self.substrates, self.products],
-            [self.products, self.substrates],
-            [-self.net_flux, self.net_flux],
-            [self.vmax_r, self.vmax_f],
-        ):
-            for s in substrates:
-                # set other substrates to 0
-                limit_flux = net_flux.subs({s_: 0 for s_ in substrates if s_ != s})
-                # let products approach inf
-                for p in products:
-                    limit_flux = sp.limit(limit_flux, p, sp.oo).cancel()
-
-                # not completely sure this is generally valid
-                if limit_flux.has(s):
-                    # uncompetitive product inhibition
-                    # compute substrate concentration for half-maximum backward rate
-                    tmp = sp.solve(sp.Eq(limit_flux, 1 / 2 * vmax), s)
-                    assert len(tmp) == 1, (tmp, limit_flux)
-                    kis[f"Ki_{s}"] = tmp[0]
-                    continue
-
-                # competitive product inhibition
-                # Ki is just the dissociation constant of the enzyme-substrate
-                # complex
-                # find micro-reaction S + E -> E_S
-                num = denom = None
-                # enzyme-substrate complex
-                for reaction in self.reactions:
-                    if set(reaction.substrates) == {self.e_free, s}:
-                        # S + E -> E_S
-                        assert (
-                            denom is None
-                        ), "Found multiple S + E -- E_S micro-reactions"
-                        denom = reaction.rate_constants[0]
-                        assert len(reaction.products) == 1
-                        assert reaction.products[0] in self.enzyme_states
-                        if reaction.reversible:
-                            num = reaction.rate_constants[1]
-                        break
-                    if (
-                        set(reaction.products) == {self.e_free, s}
-                        and reaction.reversible
-                    ):
-                        # E_S -- S + E
-                        assert (
-                            denom is None
-                        ), "Found multiple E_S -- S + E micro-reactions"
-                        denom = reaction.rate_constants[1]
-                        assert len(reaction.substrates) == 1
-                        assert reaction.substrates[0] in self.enzyme_states
-                        num = reaction.rate_constants[0]
-
-                if num is None or denom is None:
-                    if self.reversible:
-                        raise ValueError(
-                            f"Cannot find micro-reaction for E+{s} -> E:{s}"
-                        )
-                    continue
-
-                kis[f"Ki_{s}"] = num / denom
-
-        return kis
-
     def get_kinetic_parameters(self):
         """Get the kinetic parameters of the reaction.
 
@@ -303,7 +232,6 @@ class EnzymeReaction:
         pars["V_mr"] = self.vmax_r
         pars["flux"] = self.net_flux
         pars["keq_micro"] = self._compute_keq()
-        pars |= self._compute_kis()
         return pars
 
     def _compute_keq(self) -> sp.Expr:
@@ -330,143 +258,345 @@ class EnzymeReaction:
     def reversible(self):
         return not self.vmax_r.is_zero
 
+    @property
+    def micro_rate_constants(self) -> set[sp.Symbol]:
+        """Get the microscopic rate constants of the reaction."""
+        return set(chain.from_iterable(rxn.rate_constants for rxn in self.reactions))
+
     def simplify_flux(self):
         """Substitute the kinetic parameters for the microscopic rate
         constants.
-
-        NOTE: This seems rather fragile and may well fail.
         """
-        kp = self.get_kinetic_parameters()
-        vmax_f = kp["V_mf"]
-        vmax_r = kp["V_mr"]
-        sym_vmax_f = sp.Symbol("V_mf")
-        sym_vmax_r = sp.Symbol("V_mr")
-        kms = {sp.Symbol(k): v for k, v in kp.items() if k.startswith("Km_")}
-        kis = {sp.Symbol(k): v for k, v in kp.items() if k.startswith("Ki_")}
-        keq_micro = kp["keq_micro"]
-        sym_keq = sp.Symbol("Keq")
-        micro_rate_constants = set(
-            chain.from_iterable(rxn.rate_constants for rxn in self.reactions)
+        cf = self.coeff_form()
+        simplified_flux, macro_pars = cf.simplify()
+
+        return simplified_flux, macro_pars
+
+    def coeff_form(self):
+        """Get the rate equation in coefficient form."""
+        return CoefficientFormRateEquation(
+            self.net_flux, self.substrates, self.products, self.reversible
         )
 
-        # see https://doi.org/10.1016/0926-6569(63)90211-6.
-        n, d = (self.net_flux / self.e0).cancel().as_numer_denom()
+
+class CoefficientFormRateEquation:
+    """Steady-state rate equation in coefficient form.
+
+    See Cleland1963a p.112ff. https://doi.org/10.1016/0926-6569(63)90211-6.
+    """
+
+    # TODO doesn't work for random mechanisms, right?
+
+    def __init__(
+        self,
+        rate_eq: sp.Expr,
+        substrates: list[sp.Symbol],
+        products: list[sp.Symbol],
+        reversible: bool = True,
+    ):
+        """
+        Initialize.
+
+        :param rate_eq:
+            The rate equation of the reaction without the total enzyme
+            coefficient.
+        :param substrates:
+            The symbols for the substrates of the reaction.
+        :param products:
+            The symbols for the products of the reaction.
+        :param reversible:
+            Whether the reaction is reversible.
+        """
+        self.rate_eq = rate_eq
+        self.reversible = reversible
+        self.substrates = substrates
+        self.products = products
+        assert set(substrates).isdisjoint(products)
+        self._dissect()
+
+    def _dissect(self):
+        """Dissect the rate equation."""
+        self.n, self.d = self.rate_eq.cancel().as_numer_denom()
+        n, d = self.n, self.d
+
         if self.reversible:
             assert isinstance(n, sp.Add)
             assert len(n.args) == 2
-            n1 = n.args[0] / sp.Mul(*self.substrates)
-            n2 = -n.args[1] / sp.Mul(*self.products)
-            assert n1 / n2 == keq_micro
+            # arg-order may vary
+            if n.args[1].args[0] == -1:
+                n1 = n.args[0] / sp.Mul(*self.substrates)
+                n2 = -n.args[1] / sp.Mul(*self.products)
+            else:
+                assert n.args[0].args[0] == -1
+                n1 = n.args[1] / sp.Mul(*self.substrates)
+                n2 = -n.args[0] / sp.Mul(*self.products)
+            # TODO assert n1 / n2 == keq_micro
         else:
             assert isinstance(n, sp.Mul)
             n1 = n / sp.Mul(*self.substrates)
             n2 = sp.Integer(1)
 
+        # product coefficient in the numerator
+        self.n1 = n1
+        # substrate coefficient in the numerator
+        self.n2 = n2
+
         reactants = set(self.substrates + self.products)
 
         # group by common reactant factors
         # reactants => coefficients
-        coeffs = {}
+        coeffs: dict[tuple[sp.Symbol], sp.Expr] = {}
         for expr in d.args:
             cur_reactants = expr.free_symbols & reactants
             assert (expr / sp.Mul(*cur_reactants)).free_symbols.isdisjoint(reactants)
             key = tuple(sorted(cur_reactants, key=str))
-            coeffs[key] = coeffs.get(key, sp.Float(0)) + expr / sp.Mul(*cur_reactants)
+            coeffs[key] = coeffs.get(key, sp.Integer(0)) + expr / sp.Mul(*cur_reactants)
 
-        # find coefficients the product of substrates and products in the
-        # denominator
-        coeff_subs = coeffs[tuple(sorted(self.substrates, key=str))]
-        assert (n1 / coeff_subs - vmax_f / self.e0).simplify().is_zero
-        if self.reversible:
-            coeff_prods = coeffs[tuple(sorted(self.products, key=str))]
-            assert (n2 / coeff_prods - vmax_r / self.e0).simplify().is_zero
-        else:
-            coeff_prods = sp.Integer(1)
-        # assemble new numerator
-        new_n = (
-            sym_vmax_f
-            * (sym_vmax_r if self.reversible else sp.Integer(1))
-            * (
-                sp.Mul(*self.substrates)
-                - (sp.Mul(*self.products) / sym_keq if self.reversible else sp.Float(0))
-            )
+        self.coefficients = coeffs
+
+    def coefficient_of(self, reactants: list[sp.Symbol]) -> sp.Expr:
+        return self.coefficients[tuple(sorted(reactants, key=str))]
+
+    def _collect_candidates(self) -> dict[str, list[sp.Expr]]:
+        """Collect candidate expressions to define the different kinetic
+        parameters.
+
+        Find all ratios of coefficients that are valid to define the
+        kinetic parameters (Km, Ki).
+        """
+        candidates = {}
+        for s in [*self.substrates, *self.products]:
+            # look for K_m_{s}, K_i_{s}
+            for reactants_n, coeff_n in self.coefficients.items():
+                # `s` must not be in the numerator
+                if s in reactants_n:
+                    continue
+
+                # find a valid coefficient for the denominator
+                #  we need {*reactants_n, s}
+                for reactants_d, coeff_d in self.coefficients.items():
+                    if set(reactants_d) != set(reactants_n) | {s}:
+                        continue
+                    # if the denominator is the product of all
+                    #  substrates or products, then the ratio will define
+                    #  a K_m parameter, otherwise a K_i parameter
+                    if set(reactants_d) != set(self.substrates) and set(
+                        reactants_d
+                    ) != set(self.products):
+                        if not (coeff_n / coeff_d).cancel().as_numer_denom()[1].is_Atom:
+                            continue
+                        sym = f"Ki_{s}"
+                    else:
+                        sym = f"Km_{s}"
+                    candidates[sym] = candidates.get(sym, set()) | {
+                        (coeff_n / coeff_d).cancel()
+                    }
+        # TODO: sort for deterministic output
+        candidates = {k: list(v) for k, v in candidates.items()}
+
+        return candidates
+
+    def simplify(self):
+        """Replace micro-rate constants by macroscopic kinetic parameters."""
+        sym_vmax_f = sp.Symbol("V_mf")
+        sym_vmax_r = sp.Symbol("V_mr") if self.reversible else sp.Integer(1)
+        sym_keq = sp.Symbol("Keq")
+
+        # compute admissible values for K_m_{} and K_i_{}
+        candidates = self._collect_candidates()
+
+        from pprint import pprint
+
+        pprint(
+            candidates,
+            sort_dicts=False,
         )
 
-        # now replace the denominator terms
-        d_summands = []
+        coeff_all_substrates = self.coefficient_of(self.substrates)
+        coeff_all_products = (
+            self.coefficient_of(self.products) if self.reversible else sp.Integer(1)
+        )
 
-        for cur_reactants, coeff in coeffs.items():
-            expr = None
-            # try once with vf, once with vr substitution,
-            #  see which one gets rid of all rate constants
-            # is there any rule for the mixed product/substrate case?
-            #  there has to be ...
-            for trial in [1, 2]:
-                expr = coeff * n2 / coeff_prods / coeff_subs
-                expr = expr.simplify()
+        magic = self.n2 / (coeff_all_substrates * coeff_all_products)
+        # magic == V2 / coeff_all_substrates =
 
-                # Each term will have either Vmax_f or Vmax_r in the numerator
-                if not self.reversible:
-                    pass
-                elif set(cur_reactants).isdisjoint(self.products):
-                    # if there is no product term, substitute vmax_r
-                    expr = (expr / (vmax_r / self.e0) * sym_vmax_r).simplify()
-                elif set(cur_reactants).isdisjoint(self.substrates):
-                    expr = (
-                        expr / (vmax_f / self.e0) * sym_vmax_f / sym_keq * keq_micro
-                    ).simplify()
+        # V1 = n1 / coeff_all_substrates
+        # V2 = n2 / coeff_all_products
+        # V1 * V2 = n1 * n2 / (coeff_all_substrates * coeff_all_products)
+        # keq  = n1 / n2 = V1 * coeff_all_substrates / (V2 * coeff_all_products) = V1 / V2 * coeff_all_substrates / coeff_all_products
+        # V1 / Keq = V2 * coeff_all_products / coeff_all_substrates
+        V2 = self.n2 / coeff_all_products
+        V1 = self.n1 / coeff_all_substrates
+        keq = self.n1 / self.n2
+        for k, v in self.coefficients.items():
+            # tmp2 = v / magic
+            # tmp2 = tmp2.simplify()
+            print(k, v)
+
+        # The simplified coefficients look like this:
+        #  prod_k / prod_ki * v_term
+        #   v_term is "V2"       if only substrates
+        #             "V1 / Keq" if only products
+        #             either of those otherwise
+        #  prod_k is the product of various Km and Ki terms
+        #    if V1 is used, Km values or Ki values to complement the products
+        #    if V2 is used, Km values or Ki values to complement the substrates
+        # prod_ki is 1 for only products / only substrates, otherwise:
+        #    if V1 is used, Ki values to cancel out the substrates
+        #    if V2 is used, Ki values to cancel out the products
+        print()
+
+        for cur_candidates in product(*candidates.values()):
+            cur_candidates = dict(zip(candidates.keys(), cur_candidates))
+            print("cur_candidates", cur_candidates)
+
+            simplified = {}
+            for involved_reactants, coeff in self.coefficients.items():
+                print("  ", involved_reactants, coeff)
+                found_match = False
+                v_terms = []
+                if set(involved_reactants) - set(self.substrates) == set():
+                    v_terms.append(V2)
+                elif set(involved_reactants) - set(self.products) == set():
+                    v_terms.append(V1 / keq)
                 else:
-                    # mixed products and substrates
-                    if trial == 1:
-                        expr = (expr / (vmax_r / self.e0) * sym_vmax_r).simplify()
-                    elif trial == 2:
-                        expr = (
-                            expr / (vmax_f / self.e0) * sym_vmax_f / sym_keq * keq_micro
-                        ).simplify()
+                    v_terms.append(V1 / keq)
+                    v_terms.append(V2)
+                for v_term in v_terms:
+                    # try all V terms
+                    sym_v = sym_vmax_r if v_term == V2 else sym_vmax_f / sym_keq
+                    if v_term == V1 / keq:
+                        k_choices = [
+                            [
+                                (sp.Symbol(s), cur_candidates[s])
+                                for s in [f"Km_{r}", f"Ki_{r}"]
+                                if s in cur_candidates
+                            ]
+                            for r in self.products
+                            if r not in involved_reactants
+                        ]
+                        if len(v_terms) > 1:
+                            # mixed substrates and products, add 1/Ki terms
+                            tmp = [
+                                [
+                                    (
+                                        1 / sp.Symbol(f"Ki_{k}"),
+                                        1 / cur_candidates[f"Ki_{k}"],
+                                    )
+                                ]
+                                for k in involved_reactants
+                                if k in self.substrates and f"Ki_{k}" in cur_candidates
+                            ]
+                            k_choices += tmp
+                    else:
+                        k_choices = [
+                            [
+                                (sp.Symbol(s), cur_candidates[s])
+                                for s in [f"Km_{r}", f"Ki_{r}"]
+                                if s in cur_candidates
+                            ]
+                            for r in self.substrates
+                            if r not in involved_reactants
+                        ]
+                        if len(v_terms) > 1:
+                            # mixed substrates and products, add 1/Ki terms
+                            tmp = [
+                                [
+                                    (
+                                        1 / sp.Symbol(f"Ki_{k}"),
+                                        1 / cur_candidates[f"Ki_{k}"],
+                                    )
+                                ]
+                                for k in involved_reactants
+                                if k in self.products and f"Ki_{k}" in cur_candidates
+                            ]
+                            k_choices += tmp
 
-                # - try any km of a reactant that is not included or any Ki
-                # - Km always occurs in the numerator, Ki can occur everywhere
-                # - if the reactants only include substrates, only substrate
-                #   parameters can be present, vice versa for products
-                #   (mixed -> both)
-                # - there is never a Ki and Km of the same reactant in the
-                #   same term
-
-                # if count_ops is reduced by a substitution, we accept it
-                for km_sym, km_expr in kms.items():
-                    if sp.Symbol(km_sym.name.removeprefix("Km_")) in cur_reactants:
-                        continue
-
-                    trial_expr = (expr / km_expr * km_sym).simplify()
-                    if trial_expr.count_ops() < expr.count_ops():
-                        expr = trial_expr
-                        # there is maximally one K_m in each coefficient
-                        break
-
-                for ki_sym, ki_expr in kis.items():
-                    trial_expr = (expr / ki_expr * ki_sym).simplify()
-                    if trial_expr.count_ops() < expr.count_ops():
-                        # Ki is in the numerator
-                        expr = trial_expr
-                    elif sp.Symbol(ki_sym.name.removeprefix("Ki_")) in cur_reactants:
-                        trial_expr = (expr * ki_expr / ki_sym).simplify()
-                        if trial_expr.count_ops() < expr.count_ops():
-                            # Ki is in the denominator
-                            # occurs there only if the respective reactant is included
-                            # in the current term
-                            expr = trial_expr
-
-                if expr.free_symbols.isdisjoint(micro_rate_constants):
-                    d_summands.append(expr * sp.Mul(*cur_reactants))
-                    break
-
-                if set(cur_reactants).isdisjoint(self.products):
-                    # vmax{f,r} choice is clear, no need to retry
+                    for cur_choice in product(*k_choices):
+                        cur_choice = dict(cur_choice)
+                        sym_trial = sym_v * sp.Mul(*cur_choice.keys())
+                        trial = v_term * sp.Mul(*cur_choice.values())
+                        tmp = trial / magic - coeff
+                        tmp2 = tmp.cancel()
+                        print(sym_trial, tmp2)
+                        if tmp2.is_zero:
+                            found_match = True
+                            simplified[involved_reactants] = sym_trial
+                if not found_match:
+                    # no need to try the other coefficients
                     break
             else:
-                raise ValueError(
-                    "Could not simplify denominator term: " f"{cur_reactants}: {expr}"
-                )
+                # all coefficients match
+                print("MATCH", cur_candidates)
+                # TODO: add option for exhaustive search
+                break
+        else:
+            raise AssertionError("No match found")
 
-        new_d = sp.Add(*d_summands)
-        return new_n / new_d
+        # compute V_mr from Haldane relationship
+        # There is always at least a K_eq = V1/V2 * \prod K_i_or_m_product / \prod K_i_or_m_substrate
+        # We just need to find out which ones
+        # V_mr = V_mf / Keq * \prod K_i_or_m_substrate / \prod K_i_or_m_product
+        if self.reversible:
+            cands = [
+                [
+                    (sp.Symbol(s), cur_candidates[s])
+                    for s in [f"Km_{r}", f"Ki_{r}"]
+                    if s in cur_candidates
+                ]
+                for r in self.products
+            ] + [
+                [
+                    (1 / sp.Symbol(s), 1 / cur_candidates[s])
+                    for s in [f"Km_{r}", f"Ki_{r}"]
+                    if s in cur_candidates
+                ]
+                for r in self.substrates
+            ]
+            for cur_choice in product(*cands):
+                cur_choice = dict(cur_choice)
+                trial = keq - V1 / V2 * sp.Mul(*cur_choice.values())
+                sym_trial = sym_vmax_f / sym_keq * sp.Mul(*cur_choice.keys())
+                trial = trial.cancel()
+                print(sym_trial, trial.cancel())
+                if trial.is_zero:
+                    cur_candidates["V_mr"] = sym_trial
+                    break
+            else:
+                raise AssertionError("No match found")
+
+        simplified = (
+            sym_vmax_f
+            * sym_vmax_r
+            * (
+                sp.Mul(*self.substrates)
+                - (
+                    sp.Mul(*self.products) / sym_keq
+                    if self.reversible
+                    else sp.Integer(0)
+                )
+            )
+            / sp.Add(*[sp.Mul(*k) * v for k, v in simplified.items()])
+        )
+
+        return simplified, cur_candidates
+
+    @property
+    def e0(self) -> sp.Symbol:
+        return sp.Symbol("E0")
+
+    @property
+    def fwd_rate_constants(self) -> set[sp.Symbol]:
+        """Get the forward rate constants.
+
+        I.e. substrate association and product dissociation rate constants.
+        """
+        return (self.n1 / self.e0).free_symbols
+
+    @property
+    def bwd_rate_constants(self) -> set[sp.Symbol]:
+        """Get the backward rate constants.
+
+        I.e. substrate dissociation and product association rate constants.
+        """
+        return (self.n2 / self.e0).free_symbols
