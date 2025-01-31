@@ -1,10 +1,27 @@
 # rxnrater
 
 This is a package to derive rate expressions from enzyme mechanisms based on
-the steady-state assumption.
+the steady-state assumption. The rate expressions can be generated in terms of
+microscopic (mass action) rate constants or in terms of kinetic parameters
+(`K_M`, `K_i`, ...).
 
-This project is in the early stages of development and is not necessarily
-ready for production use. Double-check the results.
+For background information, see e.g.:
+
+* R. A. Alberty, “The Relationship between Michaelis Constants,
+  Maximum Velocities and the Equilibrium Constant for an Enzyme-catalyzed
+  Reaction,” Journal of the American Chemical Society,
+  vol. 75, no. 8, pp. 1928–1932, Apr. 1953, doi: 10.1021/ja01104a045.
+
+* W. W. Cleland, “The kinetics of enzyme-catalyzed reactions with two or more
+  substrates or products: I. Nomenclature and rate equations,”
+  Biochimica et Biophysica Acta (BBA), vol. 67, pp. 104–137, 1963,
+  doi: https://doi.org/10.1016/0926-6569(63)90211-6.
+
+**This project is in the early stages of development and is not necessarily
+ready for production use. Double-check the results.**
+
+If you are interested in collaborating, please contact me
+(https://github.com/dweindl/).
 
 ## Installation
 
@@ -58,7 +75,6 @@ The syntax is still a bit awkward:
 * Enzyme-species are denoted by `E` or anything starting with `E:`
 * Reactants are separated by ` + ` (spaces are required).
 * Species names must consist of `[A-Za-z0-9_]` and start with a letter.
-
 
 ## Availability
 
