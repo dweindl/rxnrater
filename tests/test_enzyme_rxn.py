@@ -136,17 +136,30 @@ def test_cleland1963_ordered_bi_bi():
     er = EnzymeReaction(rxn_str)
     assert repr(er) == "<EnzymeReaction(A + B -- P + Q)>"
     res = er.get_kinetic_parameters()
-    assert res["flux"].equals(
-        sympify(
-            "E0 * (k1 * k3 * k5 * k7 * A * B - k2 * k4 * k6 * k8 * P * Q) "
-            "/ ( (k4 + k5) * k2 * k7 "
-            "+ k1 * (k4 + k5) * k7 * A + k2 * k8 * (k4 + k5) * Q "
-            "+ k3 * k5 * k7 * B + k2 * k4 * k6 * P "
-            "+ k1 * k3 * (k5 + k7) * A * B + (k2 + k4) * k6 * k8 * P * Q"
-            " + k1 * k4 * k6 * A * P + k1 * k3 * k6 * A * B * P "
-            " + k3 * k5 * k8 * B * Q + k3 * k6 * k8 * B * P * Q)"
+
+    k1, k2, k3, k4, k5, k6, k7, k8 = sp.symbols("k1 k2 k3 k4 k5 k6 k7 k8")
+    A, B, P, Q = sp.symbols("A B P Q")
+    E0 = sp.Symbol("E0")
+
+    flux_exp = (
+        E0
+        * (k1 * k3 * k5 * k7 * A * B - k2 * k4 * k6 * k8 * P * Q)
+        / (
+            (k4 + k5) * k2 * k7
+            + k1 * (k4 + k5) * k7 * A
+            + k2 * k8 * (k4 + k5) * Q
+            + k3 * k5 * k7 * B
+            + k2 * k4 * k6 * P
+            + k1 * k3 * (k5 + k7) * A * B
+            + (k2 + k4) * k6 * k8 * P * Q
+            + k1 * k4 * k6 * A * P
+            + k1 * k3 * k6 * A * B * P
+            + k3 * k5 * k8 * B * Q
+            + k3 * k6 * k8 * B * P * Q
         )
     )
+
+    assert res["flux"].equals(flux_exp)
 
     E0 = sp.Symbol("E0")
     res["Ki_A"] = sympify("k2/k1")
@@ -268,18 +281,79 @@ def test_cleland1963_theorell_chance():
     check_kinetic_flux_expr(er, flux_exp, pars_exp)
 
 
-@pytest.mark.xfail(reason="Not implemented yet")
 def test_cleland1963_ping_pong_bi_bi():
-    """Test ping-pong bi-bi (Cleland1963, mech. 10)."""
+    """Test ping-pong bi-bi
+
+    (Cleland1963, mech. 10)
+
+    Cleland, Enzyme Kinetics and Mechanism, p.383.
+    """
+    # FIXME we currently cannot handle enzyme state "F", so they are
+    #  prefixed with "E_" instead
     rxn_str = """
     E + A -- E:A , k1 , k2
-    E:A + B -- F + P , k3 , k4
-    F + B -- F:B , k5 , k6
-    F:B -- E + Q , k7 , k8
+    E:A -- E_F + P , k3 , k4
+    E_F + B -- E_F:B , k5 , k6
+    E_F:B -- E + Q , k7 , k8
     """
     er = EnzymeReaction(rxn_str)
     assert repr(er) == "<EnzymeReaction(A + B -- P + Q)>"
-    # TODO: continue here
+    assert set(er.enzyme_states) == set(sp.symbols("E, E_A, E_F, E_F_B"))
+    res = er.get_kinetic_parameters()
+
+    k1, k2, k3, k4, k5, k6, k7, k8 = sp.symbols("k1 k2 k3 k4 k5 k6 k7 k8")
+    A, B, P, Q = sp.symbols("A B P Q")
+    E0 = sp.Symbol("E0")
+
+    flux_exp = (
+        E0
+        * (A * B * k1 * k3 * k5 * k7 - P * Q * k2 * k4 * k6 * k8)
+        / (
+            A * k1 * k3 * (k6 + k7)
+            + B * k5 * k7 * (k2 + k3)
+            + k1 * k5 * (k3 + k7) * A * B
+            + k6 * k8 * (k2 + k3) * Q
+            + k2 * k4 * P * (k6 + k7)
+            + k4 * k8 * (k2 + k6) * P * Q
+            + k1 * k4 * A * P * (k6 + k7)
+            + k5 * k8 * B * Q * (k2 + k3)
+        )
+    )
+    assert res["flux"].equals(flux_exp)
+    res_exp = {
+        "flux": flux_exp,
+        "Km_A": k7 * (k2 + k3) / (k1 * (k3 + k7)),
+        "Km_B": k3 * (k6 + k7) / (k5 * (k3 + k7)),
+        "Km_P": k6 * (k2 + k3) / (k4 * (k2 + k6)),
+        "Km_Q": k2 * (k6 + k7) / (k8 * (k2 + k6)),
+        "V_mf": E0 * k3 * k7 / (k3 + k7),
+        "V_mr": E0 * k2 * k6 / (k2 + k6),
+        "keq_micro": k1 * k3 * k5 * k7 / (k2 * k4 * k6 * k8),
+    }
+    for key, val in res_exp.items():
+        assert res[key].equals(val), f"{key}: expected {val}, got {res[key]}"
+
+    pars_exp = {
+        "Km_A": k7 * (k2 + k3) / (k1 * (k3 + k7)),
+        "Km_B": k3 * (k6 + k7) / (k5 * (k3 + k7)),
+        "Km_P": k6 * (k2 + k3) / (k4 * (k2 + k6)),
+        "Km_Q": k2 * (k6 + k7) / (k8 * (k2 + k6)),
+        "Ki_A": k2 / k1,
+        "Ki_B": k6 / k5,
+        "Ki_P": k3 / k4,
+        "Ki_Q": k7 / k8,
+    }
+
+    flux_exp = sympify(
+        "V_mf*V_mr*(A*B - P*Q/Keq)/("
+        "A*Km_B*V_mr + B*Km_A*V_mr + A*B*V_mr "
+        "+ Km_Q*P*V_mf/Keq + Km_P*Q*V_mf/Keq + P*Q*V_mf/Keq"
+        "+ A*Km_B*P*V_mr/Ki_P  + B*Km_A*Q*V_mr/Ki_Q )"
+        # last term is chosen differently in the paper:
+        #    Km_P * V_mf * B * Q / (Ki_B * Keq)
+        # but both are valid solutions
+    )
+    check_kinetic_flux_expr(er, flux_exp, pars_exp)
 
 
 @pytest.mark.xfail(reason="Not implemented yet")

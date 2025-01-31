@@ -127,7 +127,7 @@ class EnzymeReaction:
             xdot.shape[0], sp.Matrix([[sp.Add(*self.enzyme_states) - 1]])
         )
         res = sp.solve(xdot, self.enzyme_states)
-
+        assert len(res), "No steady-state solution found"
         # drop denominator which is the total enzyme concentration
         # ... this is slow
         # ... there is probably a smarter way to do that?!
