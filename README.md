@@ -5,6 +5,11 @@ the steady-state assumption. The rate expressions can be generated in terms of
 microscopic (mass action) rate constants or in terms of kinetic parameters
 (`K_M`, `K_i`, ...).
 
+Currently, only sequential mechanisms are supported. For some reactions, the
+computation time can be prohibitively long and could certainly be reduced.
+For supported examples, see
+[tests/test_enzyme_rxn.py](https://github.com/dweindl/rxnrater/blob/main/tests/test_enzyme_rxn.py).
+
 For background information, see e.g.:
 
 * R. A. Alberty, “The Relationship between Michaelis Constants,
