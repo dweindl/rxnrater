@@ -1,9 +1,9 @@
 # rxnrater
 
-This is a package to derive rate expressions from enzyme mechanisms based on
-the steady-state assumption. The rate expressions can be generated in terms of
-microscopic (mass action) rate constants or in terms of kinetic parameters
-(`K_M`, `K_i`, ...).
+This is a Python package to derive rate expressions from enzyme mechanisms
+based on the steady-state assumption of intermediary enzyme complexes.
+The rate expressions can be generated in terms of microscopic (mass action)
+rate constants or in terms of kinetic parameters (`K_M`, `K_i`, ...).
 
 Currently, only sequential mechanisms are supported. For some reactions, the
 computation time can be prohibitively long and could certainly be reduced.
@@ -15,12 +15,13 @@ For background information, see e.g.:
 * R. A. Alberty, “The Relationship between Michaelis Constants,
   Maximum Velocities and the Equilibrium Constant for an Enzyme-catalyzed
   Reaction,” Journal of the American Chemical Society,
-  vol. 75, no. 8, pp. 1928–1932, Apr. 1953, doi: 10.1021/ja01104a045.
+  vol. 75, no. 8, pp. 1928–1932, Apr. 1953,
+  doi: [10.1021/ja01104a045](https://doi.org/10.1021/ja01104a045).
 
 * W. W. Cleland, “The kinetics of enzyme-catalyzed reactions with two or more
   substrates or products: I. Nomenclature and rate equations,”
   Biochimica et Biophysica Acta (BBA), vol. 67, pp. 104–137, 1963,
-  doi: https://doi.org/10.1016/0926-6569(63)90211-6.
+  doi: [10.1016/0926-6569(63)90211-6](https://doi.org/10.1016/0926-6569(63)90211-6).
 
 **This project is in the early stages of development and is not necessarily
 ready for production use. Double-check the results.**
@@ -75,10 +76,10 @@ The syntax is still a bit awkward:
 * The syntax is `reactants -- products , k_forward , k_reverse`
   for reversible reactions, or
   `reactants -> products , k_forward` for irreversible reactions.
-  the rate constants are separated by ` , ` (spaces are required).
+  the rate constants are separated by ` , ` (spaces are currently required).
 * Individual reactions are assumed to follow mass action kinetics.
-* Enzyme-species are denoted by `E` or anything starting with `E:`
-* Reactants are separated by ` + ` (spaces are required).
+* Enzyme-species are denoted by `E` or anything starting with `E:` or `E_`.
+* Reactants are separated by ` + ` (spaces are currently required).
 * Species names must consist of `[A-Za-z0-9_]` and start with a letter.
 
 ## Availability
