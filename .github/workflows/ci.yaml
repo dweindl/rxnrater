@@ -28,5 +28,8 @@ jobs:
       run: |
         pip install --upgrade pip setuptools && pip install .[dev]
 
+    - name: Run pre-commit hooks
+      run: pre-commit run --all-files
+
     - name: Unit tests
       run: pytest
