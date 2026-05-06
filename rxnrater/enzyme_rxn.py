@@ -34,9 +34,9 @@ class EnzymeReaction:
         # TODO compute on demand
         self.stoichiometric_matrix: sp.Matrix = self._create_stoichiometric_matrix()
         self.micro_fluxes: sp.Matrix = self._get_micro_fluxes()
-        self.steadystate_concentrations: dict[
-            sp.Symbol, sp.Expr
-        ] = self._compute_steadystate_concentrations()
+        self.steadystate_concentrations: dict[sp.Symbol, sp.Expr] = (
+            self._compute_steadystate_concentrations()
+        )
         self.net_flux = self._compute_flux()
         self.vmax_f, self.vmax_r = self._compute_vmax()
 

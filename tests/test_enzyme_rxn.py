@@ -53,9 +53,9 @@ def _check_kinetic_flux_expr(
     pars_sym = {sp.Symbol(k): v for k, v in pars.items()}
     # replace twice, to ensure that all symbols are replaced
     #  (alternatively, toposort the expressions)
-    assert (
-        (flux_exp - flux_act).subs(pars_sym).subs(pars_sym).simplify().is_zero
-    ), f"{flux_exp} != {flux_act}"
+    assert (flux_exp - flux_act).subs(pars_sym).subs(pars_sym).simplify().is_zero, (
+        f"{flux_exp} != {flux_act}"
+    )
 
     if not flux_act.equals(flux_exp):
         warn(f"Flux expressions differ: {flux_act} != {flux_exp}")
